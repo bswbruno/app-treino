@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Treino - Academia</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <h1><i class="fas fa-dumbbell"></i> App Treino</h1>
+            <button id="addWorkoutBtn" class="btn-primary">
+                <i class="fas fa-plus"></i> Novo Treino
+            </button>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Workout Selection -->
+            <div class="workout-selection">
+                <h2>Seus Treinos</h2>
+                <div class="workout-tabs" id="workoutTabs">
+                    <!-- Workout tabs will be generated here -->
+                </div>
+            </div>
+
+            <!-- Current Workout -->
+            <div class="current-workout" id="currentWorkout">
+                <div class="workout-header">
+                    <h3 id="workoutTitle">Selecione um treino</h3>
+                    <div class="workout-stats">
+                        <span id="completedExercises">0</span> / <span id="totalExercises">0</span> exercícios
+                    </div>
+                </div>
+                
+                <div class="exercises-list" id="exercisesList">
+                    <!-- Exercises will be loaded here -->
+                </div>
+            </div>
+        </main>
+
+        <!-- Add Workout Modal -->
+        <div id="addWorkoutModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Adicionar Novo Treino</h3>
+                    <button class="close-btn" id="closeAddWorkoutModal">&times;</button>
+                </div>
+                <form id="addWorkoutForm">
+                    <div class="form-group">
+                        <label for="workoutName">Nome do Treino:</label>
+                        <input type="text" id="workoutName" required placeholder="Ex: Treino A - Peito e Tríceps">
+                    </div>
+                    <div class="form-group">
+                        <label for="workoutDescription">Descrição (opcional):</label>
+                        <textarea id="workoutDescription" placeholder="Descreva o foco do treino..."></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" id="cancelAddWorkout">Cancelar</button>
+                        <button type="submit" class="btn-primary">Criar Treino</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Add Exercise Modal -->
+        <div id="addExerciseModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Adicionar Exercício</h3>
+                    <button class="close-btn" id="closeAddExerciseModal">&times;</button>
+                </div>
+                <form id="addExerciseForm">
+                    <div class="form-group">
+                        <label for="exerciseName">Nome do Exercício:</label>
+                        <input type="text" id="exerciseName" required placeholder="Ex: Supino Reto">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="exerciseSets">Séries:</label>
+                            <input type="number" id="exerciseSets" min="1" max="10" value="3" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="exerciseReps">Repetições:</label>
+                            <input type="text" id="exerciseReps" placeholder="Ex: 8-12" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="exerciseImage">Imagem (URL ou arquivo):</label>
+                        <input type="text" id="exerciseImage" placeholder="URL da imagem ou nome do arquivo">
+                    </div>
+                    <div class="form-group">
+                        <label for="exerciseNotes">Observações (opcional):</label>
+                        <textarea id="exerciseNotes" placeholder="Dicas, variações, etc..."></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" id="cancelAddExercise">Cancelar</button>
+                        <button type="submit" class="btn-primary">Adicionar Exercício</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
