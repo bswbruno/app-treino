@@ -5,11 +5,26 @@
     box-sizing: border-box;
 }
 
+html, body {
+    height: 100%;
+}
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
     color: #333;
+}
+
+/* Trava o scroll do body quando um modal está aberto (mobile).
+   O "top" é definido dinamicamente via JS com a posição de scroll atual,
+   para não pular a tela ao abrir/fechar o popup. */
+body.modal-open {
+    overflow: hidden;
+    position: fixed;
+    left: 0;
+    right: 0;
+    width: 100%;
 }
 
 .app-container {
@@ -29,6 +44,7 @@ body {
     justify-content: space-between;
     align-items: center;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    position: relative;
 }
 
 .header h1 {
@@ -39,6 +55,64 @@ body {
 .header h1 i {
     margin-right: 0.5rem;
     color: #ffd700;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.btn-icon-header {
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    color: white;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1.1rem;
+    transition: background 0.2s ease;
+}
+
+.btn-icon-header:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.header-menu {
+    position: absolute;
+    top: 70%;
+    right: 2rem;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 1100;
+    min-width: 200px;
+}
+
+.header-menu.open {
+    display: flex;
+}
+
+.header-menu button {
+    background: none;
+    border: none;
+    padding: 0.9rem 1.2rem;
+    text-align: left;
+    font-size: 0.95rem;
+    color: #333;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    transition: background 0.2s ease;
+}
+
+.header-menu button:hover {
+    background: #f8f9fa;
 }
 
 /* Botões */
@@ -77,6 +151,47 @@ body {
     transform: translateY(-1px);
 }
 
+.btn-danger {
+    background: linear-gradient(135deg, #ff6b6b, #c0392b);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 25px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-danger:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(192, 57, 43, 0.4);
+}
+
+/* Botões de ícone (editar/excluir) */
+.icon-btn {
+    background: #f1f2f6;
+    border: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    cursor: pointer;
+    color: #555;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.icon-btn:hover {
+    background: #667eea;
+    color: white;
+}
+
+.icon-btn.danger:hover {
+    background: #e74c3c;
+    color: white;
+}
+
 /* Main Content */
 .main-content {
     padding: 2rem;
@@ -92,6 +207,41 @@ body {
     font-size: 1.5rem;
 }
 
+/* Navegação estilo mobile: lista de treinos <-> detalhe do treino.
+   Só uma das duas telas fica visível por vez, e a troca já entra
+   com o conteúdo visível, sem precisar rolar a página. */
+.current-workout {
+    display: none;
+}
+
+.main-content.view-detail .workout-selection {
+    display: none;
+}
+
+.main-content.view-detail .current-workout {
+    display: block;
+}
+
+.btn-back {
+    background: none;
+    border: none;
+    color: #667eea;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0;
+    order: -1;
+    width: 100%;
+    margin-bottom: 0.5rem;
+}
+
+.btn-back:hover {
+    color: #4c5fd5;
+}
+
 .workout-tabs {
     display: flex;
     gap: 1rem;
@@ -99,16 +249,51 @@ body {
     margin-bottom: 2rem;
 }
 
+.empty-tabs {
+    color: #666;
+    background: #f8f9fa;
+    border-radius: 15px;
+    padding: 1.5rem;
+    width: 100%;
+    text-align: center;
+}
+
 .workout-tab {
     background: white;
     border: 2px solid #e9ecef;
     border-radius: 15px;
-    padding: 1rem 1.5rem;
+    padding: 1rem 1.2rem;
     cursor: pointer;
     transition: all 0.3s ease;
-    min-width: 150px;
-    text-align: center;
+    min-width: 170px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.tab-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.tab-main h3 {
+    font-size: 1rem;
+    margin-bottom: 0.4rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tab-main p {
+    font-size: 0.8rem;
+    opacity: 0.8;
+}
+
+.tab-actions {
+    display: flex;
+    gap: 0.4rem;
 }
 
 .workout-tab:hover {
@@ -124,14 +309,9 @@ body {
     box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
 }
 
-.workout-tab h3 {
-    font-size: 1rem;
-    margin-bottom: 0.5rem;
-}
-
-.workout-tab p {
-    font-size: 0.8rem;
-    opacity: 0.8;
+.workout-tab.active .icon-btn {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
 }
 
 /* Current Workout */
@@ -144,6 +324,7 @@ body {
 
 .workout-header {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 2rem;
@@ -196,17 +377,25 @@ body {
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 1rem;
+    gap: 1rem;
+}
+
+.exercise-info {
+    min-width: 0;
+    flex: 1;
 }
 
 .exercise-info h4 {
     color: #333;
     font-size: 1.2rem;
     margin-bottom: 0.5rem;
+    word-break: break-word;
 }
 
 .exercise-details {
     display: flex;
-    gap: 1rem;
+    gap: 0.6rem;
+    flex-wrap: wrap;
     font-size: 0.9rem;
     color: #666;
 }
@@ -216,6 +405,13 @@ body {
     padding: 0.25rem 0.75rem;
     border-radius: 15px;
     font-weight: 500;
+    white-space: nowrap;
+}
+
+.exercise-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
 }
 
 .exercise-image {
@@ -237,9 +433,7 @@ body {
     color: #666;
 }
 
-.exercise-actions {
-    display: flex;
-    gap: 1rem;
+.exercise-footer {
     margin-top: 1rem;
 }
 
@@ -282,7 +476,8 @@ body {
     box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
 }
 
-/* Modal */
+/* Modal — corrigido para sempre aparecer centralizado na tela visível,
+   sem precisar rolar a página para ver o popup */
 .modal {
     display: none;
     position: fixed;
@@ -293,28 +488,36 @@ body {
     height: 100%;
     background-color: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(5px);
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.modal.show {
+    opacity: 1;
 }
 
 .modal-content {
     background-color: white;
-    margin: 5% auto;
     padding: 0;
     border-radius: 20px;
-    width: 90%;
+    width: 100%;
     max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-    animation: modalSlideIn 0.3s ease;
+    transform: translateY(-20px);
+    transition: transform 0.2s ease;
 }
 
-@keyframes modalSlideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-50px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+.modal.show .modal-content {
+    transform: translateY(0);
+}
+
+.modal-small {
+    max-width: 420px;
 }
 
 .modal-header {
@@ -325,6 +528,12 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    position: sticky;
+    top: 0;
+}
+
+.modal-header-danger {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
 }
 
 .modal-header h3 {
@@ -350,6 +559,16 @@ body {
 
 .close-btn:hover {
     background: rgba(255, 255, 255, 0.2);
+}
+
+.confirm-body {
+    padding: 2rem;
+}
+
+.confirm-body p {
+    margin-bottom: 1.5rem;
+    color: #444;
+    line-height: 1.5;
 }
 
 /* Form */
@@ -396,6 +615,37 @@ form {
     min-height: 80px;
 }
 
+.image-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.btn-choose-file {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.image-preview-wrap {
+    margin-top: 0.75rem;
+    position: relative;
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+}
+
+.image-preview {
+    width: 120px;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 10px;
+    border: 2px solid #e9ecef;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
 .form-actions {
     display: flex;
     gap: 1rem;
@@ -403,73 +653,120 @@ form {
     margin-top: 2rem;
 }
 
+/* Toast */
+.toast {
+    position: fixed;
+    left: 50%;
+    bottom: 30px;
+    transform: translateX(-50%) translateY(20px);
+    background: #333;
+    color: white;
+    padding: 0.9rem 1.5rem;
+    border-radius: 30px;
+    font-size: 0.95rem;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.25s ease;
+    z-index: 2000;
+    max-width: 90%;
+    text-align: center;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.toast.success {
+    background: #28a745;
+}
+
+.toast.error {
+    background: #e74c3c;
+}
+
 /* Responsividade */
 @media (max-width: 768px) {
     .header {
         padding: 1rem;
-        flex-direction: column;
-        gap: 1rem;
     }
-    
+
     .header h1 {
-        font-size: 1.5rem;
+        font-size: 1.3rem;
     }
-    
+
+    .header-actions {
+        gap: 0.5rem;
+    }
+
+    .header-menu {
+        right: 1rem;
+        top: 4.2rem;
+    }
+
     .main-content {
         padding: 1rem;
     }
-    
+
     .workout-tabs {
-        justify-content: center;
+        flex-direction: column;
     }
-    
+
     .workout-tab {
-        min-width: 120px;
-        padding: 0.75rem 1rem;
+        min-width: auto;
+        width: 100%;
     }
-    
+
     .workout-header {
         flex-direction: column;
         gap: 1rem;
         text-align: center;
+        align-items: stretch;
     }
-    
+
     .exercise-header {
         flex-direction: column;
-        gap: 1rem;
+        gap: 0.75rem;
     }
-    
+
+    .exercise-actions {
+        align-self: flex-end;
+    }
+
     .exercise-details {
         flex-wrap: wrap;
     }
-    
+
     .form-row {
         grid-template-columns: 1fr;
     }
-    
+
     .form-actions {
         flex-direction: column;
     }
-    
+
+    .form-actions button {
+        width: 100%;
+    }
+
+    .modal {
+        padding: 0;
+        align-items: flex-end;
+    }
+
     .modal-content {
-        margin: 10% auto;
-        width: 95%;
+        max-width: 100%;
+        max-height: 92vh;
+        border-radius: 20px 20px 0 0;
     }
 }
 
 @media (max-width: 480px) {
-    .workout-tabs {
-        flex-direction: column;
-    }
-    
-    .workout-tab {
-        min-width: auto;
-    }
-    
     .exercise-card {
         padding: 1rem;
     }
-    
+
     .exercise-image {
         height: 150px;
     }
@@ -506,4 +803,4 @@ form {
 @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
-} 
+}

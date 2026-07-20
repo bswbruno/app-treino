@@ -2,25 +2,34 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>App Treino - Academia</title>
     <link rel="stylesheet" href="styles.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
     <div class="app-container">
         <!-- Header -->
         <header class="header">
             <h1><i class="fas fa-dumbbell"></i> App Treino</h1>
-            <button id="addWorkoutBtn" class="btn-primary">
-                <i class="fas fa-plus"></i> Novo Treino
-            </button>
+            <div class="header-actions">
+                <button id="menuBtn" class="btn-icon-header" title="Mais opções">
+                    <i class="fas fa-ellipsis-vertical"></i>
+                </button>
+                <button id="addWorkoutBtn" class="btn-primary">
+                    <i class="fas fa-plus"></i> Novo Treino
+                </button>
+            </div>
+            <div id="headerMenu" class="header-menu">
+                <button id="exportBtn"><i class="fas fa-file-pdf"></i> Exportar PDF</button>
+            </div>
         </header>
 
         <!-- Main Content -->
         <main class="main-content">
             <!-- Workout Selection -->
-            <div class="workout-selection">
+            <div class="workout-selection" id="workoutSelection">
                 <h2>Seus Treinos</h2>
                 <div class="workout-tabs" id="workoutTabs">
                     <!-- Workout tabs will be generated here -->
@@ -30,81 +39,126 @@
             <!-- Current Workout -->
             <div class="current-workout" id="currentWorkout">
                 <div class="workout-header">
+                    <button id="backToListBtn" class="btn-back" title="Voltar para a lista de treinos">
+                        <i class="fas fa-arrow-left"></i> Voltar
+                    </button>
                     <h3 id="workoutTitle">Selecione um treino</h3>
                     <div class="workout-stats">
                         <span id="completedExercises">0</span> / <span id="totalExercises">0</span> exercícios
                     </div>
                 </div>
-                
+
                 <div class="exercises-list" id="exercisesList">
                     <!-- Exercises will be loaded here -->
                 </div>
             </div>
         </main>
+    </div>
 
-        <!-- Add Workout Modal -->
-        <div id="addWorkoutModal" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Adicionar Novo Treino</h3>
-                    <button class="close-btn" id="closeAddWorkoutModal">&times;</button>
-                </div>
-                <form id="addWorkoutForm">
-                    <div class="form-group">
-                        <label for="workoutName">Nome do Treino:</label>
-                        <input type="text" id="workoutName" required placeholder="Ex: Treino A - Peito e Tríceps">
-                    </div>
-                    <div class="form-group">
-                        <label for="workoutDescription">Descrição (opcional):</label>
-                        <textarea id="workoutDescription" placeholder="Descreva o foco do treino..."></textarea>
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" class="btn-secondary" id="cancelAddWorkout">Cancelar</button>
-                        <button type="submit" class="btn-primary">Criar Treino</button>
-                    </div>
-                </form>
+    <!-- Os modais e o toast ficam FORA de .app-container de propósito:
+         .app-container usa backdrop-filter, e isso cria um novo "containing block"
+         para elementos position:fixed, fazendo o popup se posicionar em relação
+         ao container (que rola com a página) em vez da tela. Por isso, antes,
+         era preciso rolar até o topo para ver o popup. -->
+
+    <!-- Add/Edit Workout Modal -->
+    <div id="addWorkoutModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="workoutModalTitle">Adicionar Novo Treino</h3>
+                <button class="close-btn" id="closeAddWorkoutModal">&times;</button>
             </div>
-        </div>
-
-        <!-- Add Exercise Modal -->
-        <div id="addExerciseModal" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>Adicionar Exercício</h3>
-                    <button class="close-btn" id="closeAddExerciseModal">&times;</button>
+            <form id="addWorkoutForm">
+                <div class="form-group">
+                    <label for="workoutName">Nome do Treino:</label>
+                    <input type="text" id="workoutName" required placeholder="Ex: Treino A - Peito e Tríceps">
                 </div>
-                <form id="addExerciseForm">
+                <div class="form-group">
+                    <label for="workoutDescription">Descrição (opcional):</label>
+                    <textarea id="workoutDescription" placeholder="Descreva o foco do treino..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancelAddWorkout">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="submitWorkoutBtn">Criar Treino</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add/Edit Exercise Modal -->
+    <div id="addExerciseModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="exerciseModalTitle">Adicionar Exercício</h3>
+                <button class="close-btn" id="closeAddExerciseModal">&times;</button>
+            </div>
+            <form id="addExerciseForm">
+                <div class="form-group">
+                    <label for="exerciseName">Nome do Exercício:</label>
+                    <input type="text" id="exerciseName" required placeholder="Ex: Supino Reto">
+                </div>
+                <div class="form-row">
                     <div class="form-group">
-                        <label for="exerciseName">Nome do Exercício:</label>
-                        <input type="text" id="exerciseName" required placeholder="Ex: Supino Reto">
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="exerciseSets">Séries:</label>
-                            <input type="number" id="exerciseSets" min="1" max="10" value="3" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="exerciseReps">Repetições:</label>
-                            <input type="text" id="exerciseReps" placeholder="Ex: 8-12" required>
-                        </div>
+                        <label for="exerciseSets">Séries:</label>
+                        <input type="number" id="exerciseSets" min="1" max="10" value="3" required>
                     </div>
                     <div class="form-group">
-                        <label for="exerciseImage">Imagem (URL ou arquivo):</label>
-                        <input type="text" id="exerciseImage" placeholder="URL da imagem ou nome do arquivo">
+                        <label for="exerciseReps">Repetições:</label>
+                        <input type="text" id="exerciseReps" placeholder="Ex: 8-12" required>
                     </div>
-                    <div class="form-group">
-                        <label for="exerciseNotes">Observações (opcional):</label>
-                        <textarea id="exerciseNotes" placeholder="Dicas, variações, etc..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="exerciseWeight">Carga (opcional):</label>
+                    <input type="text" id="exerciseWeight" placeholder="Ex: 20kg">
+                </div>
+                <div class="form-group">
+                    <label for="exerciseImage">Imagem do exercício:</label>
+                    <div class="image-input-group">
+                        <input type="text" id="exerciseImage" placeholder="Cole uma URL ou o nome de um arquivo em img/...">
+                        <button type="button" class="btn-secondary btn-choose-file" id="chooseImageFileBtn">
+                            <i class="fas fa-image"></i> Escolher do celular
+                        </button>
+                        <input type="file" id="exerciseImageFile" accept="image/png,image/jpeg,image/jpg,image/webp" hidden>
                     </div>
-                    <div class="form-actions">
-                        <button type="button" class="btn-secondary" id="cancelAddExercise">Cancelar</button>
-                        <button type="submit" class="btn-primary">Adicionar Exercício</button>
+                    <div id="exerciseImagePreviewWrap" class="image-preview-wrap" style="display:none;">
+                        <img id="exerciseImagePreview" class="image-preview" alt="Pré-visualização">
+                        <button type="button" class="icon-btn danger" id="removeImagePreviewBtn" title="Remover imagem">
+                            <i class="fas fa-trash"></i>
+                        </button>
                     </div>
-                </form>
+                </div>
+                <div class="form-group">
+                    <label for="exerciseNotes">Observações (opcional):</label>
+                    <textarea id="exerciseNotes" placeholder="Dicas, variações, etc..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancelAddExercise">Cancelar</button>
+                    <button type="submit" class="btn-primary" id="submitExerciseBtn">Adicionar Exercício</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirm Delete Modal -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content modal-small">
+            <div class="modal-header modal-header-danger">
+                <h3>Confirmar exclusão</h3>
+                <button class="close-btn" id="closeConfirmModal">&times;</button>
+            </div>
+            <div class="confirm-body">
+                <p id="confirmMessage">Tem certeza que deseja excluir?</p>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancelConfirm">Cancelar</button>
+                    <button type="button" class="btn-danger" id="confirmDeleteBtn">Excluir</button>
+                </div>
             </div>
         </div>
     </div>
 
+    <!-- Toast -->
+    <div id="toast" class="toast"></div>
+
     <script src="script.js"></script>
 </body>
-</html> 
+</html>
