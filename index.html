@@ -4,9 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>App Treino - Academia</title>
+
+    <!-- PWA: ícone e configurações para "Adicionar à tela inicial" -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#667eea">
+
+    <!-- Favicon (aba do navegador) -->
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+
+    <!-- Android / Chrome -->
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+
+    <!-- iOS / Safari (ícone ao adicionar à tela de início) -->
+    <link rel="apple-touch-icon" href="icons/icon-180.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="App Treino">
+
     <link rel="stylesheet" href="styles.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
     <div class="app-container">
@@ -14,7 +36,7 @@
         <header class="header">
             <h1><i class="fas fa-dumbbell"></i> App Treino</h1>
             <div class="header-actions">
-                <button id="menuBtn" class="btn-icon-header" title="Mais opções">
+                <button id="menuBtn" class="btn-icon-header" title="Mais opções" aria-label="Mais opções" aria-haspopup="true" aria-expanded="false">
                     <i class="fas fa-ellipsis-vertical"></i>
                 </button>
                 <button id="addWorkoutBtn" class="btn-primary">
@@ -22,7 +44,9 @@
                 </button>
             </div>
             <div id="headerMenu" class="header-menu">
-                <button id="exportBtn"><i class="fas fa-file-pdf"></i> Exportar PDF</button>
+                <button id="progressBtn"><i class="fas fa-chart-line"></i> Progressão de Carga</button>
+                <button id="historyBtn"><i class="fas fa-clock-rotate-left"></i> Histórico de Treinos</button>
+                <button id="exportBtn"><i class="fas fa-file-pdf"></i> Exportar Treinos (PDF)</button>
             </div>
         </header>
 
@@ -39,7 +63,7 @@
             <!-- Current Workout -->
             <div class="current-workout" id="currentWorkout">
                 <div class="workout-header">
-                    <button id="backToListBtn" class="btn-back" title="Voltar para a lista de treinos">
+                    <button id="backToListBtn" class="btn-back" title="Voltar para a lista de treinos" aria-label="Voltar para a lista de treinos">
                         <i class="fas fa-arrow-left"></i> Voltar
                     </button>
                     <h3 id="workoutTitle">Selecione um treino</h3>
@@ -50,6 +74,38 @@
 
                 <div class="exercises-list" id="exercisesList">
                     <!-- Exercises will be loaded here -->
+                </div>
+
+                <button id="finishWorkoutBtn" class="btn-finish">
+                    <i class="fas fa-flag-checkered"></i> Finalizar Treino e Salvar no Histórico
+                </button>
+            </div>
+
+            <!-- History View -->
+            <div class="history-view" id="historyView">
+                <div class="workout-header">
+                    <button id="backFromHistoryBtn" class="btn-back" title="Voltar" aria-label="Voltar para a lista de treinos">
+                        <i class="fas fa-arrow-left"></i> Voltar
+                    </button>
+                    <h3>Histórico de Treinos</h3>
+                    <button id="exportHistoryBtn" class="btn-secondary">
+                        <i class="fas fa-file-pdf"></i> Exportar
+                    </button>
+                </div>
+                <div class="history-list" id="historyList">
+                    <!-- Sessions will be rendered here -->
+                </div>
+            </div>
+            <!-- Progress View -->
+            <div class="progress-view" id="progressView">
+                <div class="workout-header">
+                    <button id="backFromProgressBtn" class="btn-back" title="Voltar" aria-label="Voltar para a lista de treinos">
+                        <i class="fas fa-arrow-left"></i> Voltar
+                    </button>
+                    <h3>Progressão de Carga</h3>
+                </div>
+                <div class="progress-list" id="progressList">
+                    <!-- Gráficos por exercício serão renderizados aqui -->
                 </div>
             </div>
         </main>
@@ -62,11 +118,11 @@
          era preciso rolar até o topo para ver o popup. -->
 
     <!-- Add/Edit Workout Modal -->
-    <div id="addWorkoutModal" class="modal">
-        <div class="modal-content">
+    <div id="addWorkoutModal" class="modal" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="workoutModalTitle">
             <div class="modal-header">
                 <h3 id="workoutModalTitle">Adicionar Novo Treino</h3>
-                <button class="close-btn" id="closeAddWorkoutModal">&times;</button>
+                <button class="close-btn" id="closeAddWorkoutModal" aria-label="Fechar">&times;</button>
             </div>
             <form id="addWorkoutForm">
                 <div class="form-group">
@@ -86,11 +142,11 @@
     </div>
 
     <!-- Add/Edit Exercise Modal -->
-    <div id="addExerciseModal" class="modal">
-        <div class="modal-content">
+    <div id="addExerciseModal" class="modal" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="exerciseModalTitle">
             <div class="modal-header">
                 <h3 id="exerciseModalTitle">Adicionar Exercício</h3>
-                <button class="close-btn" id="closeAddExerciseModal">&times;</button>
+                <button class="close-btn" id="closeAddExerciseModal" aria-label="Fechar">&times;</button>
             </div>
             <form id="addExerciseForm">
                 <div class="form-group">
@@ -115,14 +171,21 @@
                     <label for="exerciseImage">Imagem do exercício:</label>
                     <div class="image-input-group">
                         <input type="text" id="exerciseImage" placeholder="Cole uma URL ou o nome de um arquivo em img/...">
+                        <button type="button" class="btn-secondary btn-choose-file" id="searchImageBtn">
+                            <i class="fas fa-magnifying-glass"></i> Buscar imagem na internet
+                        </button>
                         <button type="button" class="btn-secondary btn-choose-file" id="chooseImageFileBtn">
                             <i class="fas fa-image"></i> Escolher do celular
                         </button>
                         <input type="file" id="exerciseImageFile" accept="image/png,image/jpeg,image/jpg,image/webp" hidden>
                     </div>
+                    <p class="field-hint">
+                        Dica: na busca, toque e segure a imagem (ou clique com o botão direito no computador) e escolha
+                        "Copiar link/endereço da imagem". Depois é só colar esse link no campo acima.
+                    </p>
                     <div id="exerciseImagePreviewWrap" class="image-preview-wrap" style="display:none;">
                         <img id="exerciseImagePreview" class="image-preview" alt="Pré-visualização">
-                        <button type="button" class="icon-btn danger" id="removeImagePreviewBtn" title="Remover imagem">
+                        <button type="button" class="icon-btn danger" id="removeImagePreviewBtn" title="Remover imagem" aria-label="Remover imagem selecionada">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
@@ -140,11 +203,11 @@
     </div>
 
     <!-- Confirm Delete Modal -->
-    <div id="confirmModal" class="modal">
-        <div class="modal-content modal-small">
+    <div id="confirmModal" class="modal" aria-hidden="true">
+        <div class="modal-content modal-small" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle">
             <div class="modal-header modal-header-danger">
-                <h3>Confirmar exclusão</h3>
-                <button class="close-btn" id="closeConfirmModal">&times;</button>
+                <h3 id="confirmModalTitle">Confirmar exclusão</h3>
+                <button class="close-btn" id="closeConfirmModal" aria-label="Fechar">&times;</button>
             </div>
             <div class="confirm-body">
                 <p id="confirmMessage">Tem certeza que deseja excluir?</p>
@@ -157,7 +220,7 @@
     </div>
 
     <!-- Toast -->
-    <div id="toast" class="toast"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="script.js"></script>
 </body>

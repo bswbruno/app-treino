@@ -1,32 +1,156 @@
 // App de Treinos - Academia
+const DB_NAME = 'AppTreinoDB';
+const DB_VERSION = 1;
+const STORE_NAME = 'appData';
+
 class WorkoutApp {
     constructor() {
-        this.workouts = this.loadWorkouts();
+        this.workouts = [];
+        this.history = [];
+        this.db = null;
         this.currentWorkout = null;
         this.editingWorkoutId = null;
         this.editingExerciseId = null;
-        this.pendingDelete = null; // { type: 'workout'|'exercise', id }
+        this.pendingDelete = null; // { type: 'workout'|'exercise'|'session', id }
+        this.progressCharts = [];
         this.init();
     }
 
-    init() {
+    async init() {
+        this.db = await this.openDatabase();
+        await this.migrateFromLocalStorageIfNeeded();
+
+        this.workouts = await this.loadWorkouts();
+        this.history = await this.loadHistory();
+
         this.setupEventListeners();
-        this.loadSampleData();
+        await this.loadSampleData();
         this.renderWorkoutTabs();
     }
 
-    // Carregar dados salvos do localStorage
-    loadWorkouts() {
+    // ---------- ARMAZENAMENTO (IndexedDB, com fallback em localStorage) ----------
+    // IndexedDB tem um limite de armazenamento muito maior que o localStorage
+    // (que costuma travar em ~5-10MB), o que é importante aqui porque as fotos
+    // dos exercícios são guardadas em base64 e podem pesar bastante.
+
+    openDatabase() {
+        return new Promise((resolve) => {
+            if (!window.indexedDB) {
+                resolve(null); // navegador sem suporte: cai para localStorage
+                return;
+            }
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(STORE_NAME)) {
+                    db.createObjectStore(STORE_NAME, { keyPath: 'key' });
+                }
+            };
+            request.onsuccess = (e) => resolve(e.target.result);
+            request.onerror = () => resolve(null); // qualquer erro: cai para localStorage
+        });
+    }
+
+    idbGet(key) {
+        return new Promise((resolve) => {
+            if (!this.db) { resolve(undefined); return; }
+            try {
+                const tx = this.db.transaction(STORE_NAME, 'readonly');
+                const store = tx.objectStore(STORE_NAME);
+                const req = store.get(key);
+                req.onsuccess = () => resolve(req.result ? req.result.value : undefined);
+                req.onerror = () => resolve(undefined);
+            } catch (err) {
+                resolve(undefined);
+            }
+        });
+    }
+
+    idbSet(key, value) {
+        return new Promise((resolve) => {
+            if (!this.db) { resolve(false); return; }
+            try {
+                const tx = this.db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                store.put({ key, value });
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => resolve(false);
+            } catch (err) {
+                resolve(false);
+            }
+        });
+    }
+
+    // Se o navegador já tinha dados salvos no localStorage (versão anterior do
+    // app) e o IndexedDB ainda está vazio, copia os dados uma única vez.
+    async migrateFromLocalStorageIfNeeded() {
+        if (!this.db) return;
+
+        const existingWorkouts = await this.idbGet('workouts');
+        if (existingWorkouts === undefined) {
+            const oldWorkouts = localStorage.getItem('workoutApp_data');
+            if (oldWorkouts) {
+                try {
+                    await this.idbSet('workouts', JSON.parse(oldWorkouts));
+                } catch (err) { /* dados antigos inválidos: ignora */ }
+            }
+        }
+
+        const existingHistory = await this.idbGet('history');
+        if (existingHistory === undefined) {
+            const oldHistory = localStorage.getItem('workoutApp_history');
+            if (oldHistory) {
+                try {
+                    await this.idbSet('history', JSON.parse(oldHistory));
+                } catch (err) { /* dados antigos inválidos: ignora */ }
+            }
+        }
+    }
+
+    // Carregar treinos
+    async loadWorkouts() {
+        const fromDb = await this.idbGet('workouts');
+        if (fromDb !== undefined) return fromDb;
+
+        // Fallback: navegador sem IndexedDB, usa localStorage normalmente
         const saved = localStorage.getItem('workoutApp_data');
         return saved ? JSON.parse(saved) : [];
     }
 
-    // Salvar dados no localStorage
-    saveWorkouts() {
+    // Salvar treinos
+    async saveWorkouts() {
+        if (this.db) {
+            const ok = await this.idbSet('workouts', this.workouts);
+            if (!ok) this.showToast('Não foi possível salvar. Tente novamente.', 'error');
+            return;
+        }
         try {
             localStorage.setItem('workoutApp_data', JSON.stringify(this.workouts));
         } catch (err) {
             this.showToast('Armazenamento cheio. Tente remover ou usar fotos menores.', 'error');
+        }
+    }
+
+    // Carregar histórico de treinos realizados
+    async loadHistory() {
+        const fromDb = await this.idbGet('history');
+        if (fromDb !== undefined) return fromDb;
+
+        const saved = localStorage.getItem('workoutApp_history');
+        return saved ? JSON.parse(saved) : [];
+    }
+
+    // Salvar histórico
+    async saveHistory() {
+        if (this.db) {
+            const ok = await this.idbSet('history', this.history);
+            if (!ok) this.showToast('Não foi possível salvar o histórico.', 'error');
+            return;
+        }
+        try {
+            localStorage.setItem('workoutApp_history', JSON.stringify(this.history));
+        } catch (err) {
+            this.showToast('Armazenamento cheio. Não foi possível salvar o histórico.', 'error');
         }
     }
 
@@ -40,12 +164,40 @@ class WorkoutApp {
         // Menu do cabeçalho (exportar/importar)
         document.getElementById('menuBtn').addEventListener('click', (e) => {
             e.stopPropagation();
-            document.getElementById('headerMenu').classList.toggle('open');
+            const menu = document.getElementById('headerMenu');
+            const isOpen = menu.classList.toggle('open');
+            document.getElementById('menuBtn').setAttribute('aria-expanded', String(isOpen));
         });
         document.addEventListener('click', () => {
             document.getElementById('headerMenu').classList.remove('open');
+            document.getElementById('menuBtn').setAttribute('aria-expanded', 'false');
         });
         document.getElementById('exportBtn').addEventListener('click', () => this.exportPDF());
+        document.getElementById('progressBtn').addEventListener('click', () => {
+            document.getElementById('headerMenu').classList.remove('open');
+            this.openProgressView();
+        });
+
+        document.getElementById('backFromProgressBtn').addEventListener('click', () => {
+            this.backToWorkoutList();
+        });
+
+        document.getElementById('historyBtn').addEventListener('click', () => {
+            document.getElementById('headerMenu').classList.remove('open');
+            this.openHistoryView();
+        });
+
+        document.getElementById('finishWorkoutBtn').addEventListener('click', () => {
+            this.finishWorkout();
+        });
+
+        document.getElementById('backFromHistoryBtn').addEventListener('click', () => {
+            this.backToWorkoutList();
+        });
+
+        document.getElementById('exportHistoryBtn').addEventListener('click', () => {
+            this.exportHistoryPDF();
+        });
 
         // Modal de adicionar/editar treino
         document.getElementById('addWorkoutBtn').addEventListener('click', () => {
@@ -77,6 +229,11 @@ class WorkoutApp {
         document.getElementById('addExerciseForm').addEventListener('submit', (e) => {
             e.preventDefault();
             this.saveExerciseForm();
+        });
+
+        // Buscar imagem do exercício na internet (abre o Google Imagens já com o nome preenchido)
+        document.getElementById('searchImageBtn').addEventListener('click', () => {
+            this.searchExerciseImage();
         });
 
         // Escolher imagem do celular (galeria ou câmera)
@@ -152,8 +309,18 @@ class WorkoutApp {
         this._scrollY = window.scrollY || window.pageYOffset || 0;
         document.body.style.top = `-${this._scrollY}px`;
         document.body.classList.add('modal-open');
+
+        // Guarda o elemento que tinha foco para devolver o foco a ele ao fechar
+        // (importante para quem navega por teclado/leitor de tela)
+        this._lastFocusedElement = document.activeElement;
+
         const modal = document.getElementById(modalId);
         modal.style.display = 'flex';
+        modal.setAttribute('aria-hidden', 'false');
+
+        this._trapFocusHandler = (e) => this.trapFocus(e, modal);
+        modal.addEventListener('keydown', this._trapFocusHandler);
+
         // Força reflow antes de adicionar a classe de animação
         requestAnimationFrame(() => {
             modal.classList.add('show');
@@ -162,14 +329,45 @@ class WorkoutApp {
             const firstInput = modal.querySelector('input, textarea');
             if (firstInput && window.innerWidth > 600) {
                 firstInput.focus({ preventScroll: true });
+            } else {
+                // Em telas pequenas evitamos focar um input (abriria o teclado
+                // imediatamente); focamos o modal em si para leitores de tela
+                content.setAttribute('tabindex', '-1');
+                content.focus({ preventScroll: true });
             }
         });
+    }
+
+    // Mantém o foco (Tab / Shift+Tab) dentro do modal aberto, para não "vazar"
+    // o foco para elementos escondidos atrás dele
+    trapFocus(e, modal) {
+        if (e.key !== 'Tab') return;
+
+        const focusable = modal.querySelectorAll(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
     }
 
     // Esconder modal
     hideModal(modalId) {
         const modal = document.getElementById(modalId);
         modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+        if (this._trapFocusHandler) {
+            modal.removeEventListener('keydown', this._trapFocusHandler);
+        }
         setTimeout(() => {
             modal.style.display = 'none';
         }, 200);
@@ -180,6 +378,11 @@ class WorkoutApp {
             document.body.classList.remove('modal-open');
             document.body.style.top = '';
             window.scrollTo(0, this._scrollY || 0);
+        }
+
+        // Devolve o foco para quem abriu o modal
+        if (this._lastFocusedElement && document.body.contains(this._lastFocusedElement)) {
+            this._lastFocusedElement.focus();
         }
     }
 
@@ -269,6 +472,22 @@ class WorkoutApp {
 
     // Comprime uma foto escolhida do celular para um data URL leve,
     // evitando estourar o limite do localStorage com fotos em resolução total
+    // Abre o Google Imagens em uma nova aba já buscando pelo nome do exercício,
+    // para facilitar encontrar uma foto de referência ao cadastrar o exercício
+    searchExerciseImage() {
+        const name = document.getElementById('exerciseName').value.trim();
+
+        if (!name) {
+            this.showToast('Digite o nome do exercício antes de buscar uma imagem.', 'error');
+            document.getElementById('exerciseName').focus();
+            return;
+        }
+
+        const query = encodeURIComponent(`${name} exercício academia execução`);
+        window.open(`https://www.google.com/search?tbm=isch&q=${query}`, '_blank', 'noopener');
+        this.showToast('Toque e segure a imagem escolhida e copie o link para colar aqui.', 'info');
+    }
+
     compressImageFile(file, maxSize = 1000, quality = 0.8) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -435,10 +654,336 @@ class WorkoutApp {
             this.renderExercises();
             this.renderWorkoutTabs();
             this.showToast('Exercício excluído.', 'success');
+        } else if (this.pendingDelete.type === 'session') {
+            this.history = this.history.filter(s => s.id !== this.pendingDelete.id);
+            this.saveHistory();
+            this.renderHistory();
+            this.showToast('Registro do histórico excluído.', 'success');
         }
 
         this.pendingDelete = null;
         this.hideModal('confirmModal');
+    }
+
+    // ---------- HISTÓRICO ----------
+
+    // Registra a sessão atual (feito/não feito) no histórico e reinicia
+    // as marcações de conclusão do treino para a próxima sessão
+    finishWorkout() {
+        if (!this.currentWorkout) return;
+
+        if (this.currentWorkout.exercises.length === 0) {
+            this.showToast('Adicione exercícios a este treino antes de finalizar.', 'error');
+            return;
+        }
+
+        const session = {
+            id: Date.now().toString(),
+            workoutId: this.currentWorkout.id,
+            workoutName: this.currentWorkout.name,
+            date: new Date().toISOString(),
+            exercises: this.currentWorkout.exercises.map(ex => ({
+                name: ex.name,
+                sets: ex.sets,
+                reps: ex.reps,
+                weight: ex.weight || '',
+                completed: !!ex.completed
+            }))
+        };
+
+        this.history.unshift(session);
+        this.saveHistory();
+
+        // Reinicia as marcações de conclusão para a próxima vez que o treino for feito
+        this.currentWorkout.exercises.forEach(ex => ex.completed = false);
+        this.saveWorkouts();
+        this.renderExercises();
+        this.renderWorkoutTabs();
+
+        this.showToast('Treino registrado no histórico!', 'success');
+    }
+
+    deleteSession(sessionId) {
+        this.pendingDelete = { type: 'session', id: sessionId };
+        document.getElementById('confirmMessage').textContent =
+            'Excluir este registro do histórico? Essa ação não pode ser desfeita.';
+        this.showModal('confirmModal');
+    }
+
+    renderHistory() {
+        const list = document.getElementById('historyList');
+        list.innerHTML = '';
+
+        if (this.history.length === 0) {
+            list.innerHTML = `
+                <div class="empty-history">
+                    <p>Nenhum treino finalizado ainda.</p>
+                    <p>Abra um treino e clique em "Finalizar Treino" para registrar sua sessão aqui.</p>
+                </div>
+            `;
+            return;
+        }
+
+        this.history.forEach(session => {
+            const card = document.createElement('div');
+            card.className = 'session-card';
+
+            const dateObj = new Date(session.date);
+            const dateStr = dateObj.toLocaleDateString('pt-BR');
+            const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            const completedCount = session.exercises.filter(ex => ex.completed).length;
+
+            const exercisesHtml = session.exercises.map(ex => `
+                <li class="${ex.completed ? 'done' : 'not-done'}">
+                    <i class="fas ${ex.completed ? 'fa-check-circle' : 'fa-times-circle'}"></i>
+                    <span>${this.escapeHtml(ex.name)} — ${ex.sets}x${this.escapeHtml(ex.reps)}${ex.weight ? ' · ' + this.escapeHtml(ex.weight) : ''}</span>
+                </li>
+            `).join('');
+
+            card.innerHTML = `
+                <div class="session-card-header">
+                    <div class="session-card-title">
+                        <h4>${this.escapeHtml(session.workoutName)}</h4>
+                        <span>${dateStr} às ${timeStr}</span>
+                    </div>
+                    <div class="session-actions">
+                        <span class="session-badge">${completedCount}/${session.exercises.length} concluídos</span>
+                        <button class="icon-btn danger delete-session-btn" title="Excluir registro" aria-label="Excluir registro do histórico">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <ul class="session-exercise-list">${exercisesHtml}</ul>
+            `;
+
+            card.querySelector('.delete-session-btn').addEventListener('click', () => {
+                this.deleteSession(session.id);
+            });
+
+            list.appendChild(card);
+        });
+    }
+
+    async exportHistoryPDF() {
+        if (this.history.length === 0) {
+            this.showToast('Nenhum registro no histórico para exportar.', 'error');
+            return;
+        }
+        if (!window.jspdf) {
+            this.showToast('Não foi possível carregar o gerador de PDF. Verifique sua conexão.', 'error');
+            return;
+        }
+
+        this.showToast('Gerando PDF do histórico, aguarde...', 'info');
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const marginX = 40;
+        const contentWidth = pageWidth - marginX * 2;
+        const topMargin = 60;
+        let y = topMargin;
+
+        const drawHeaderBar = () => {
+            doc.setFillColor(102, 126, 234);
+            doc.rect(0, 0, pageWidth, 6, 'F');
+        };
+
+        const checkPageBreak = (spaceNeeded) => {
+            if (y + spaceNeeded > pageHeight - 50) {
+                doc.addPage();
+                drawHeaderBar();
+                y = topMargin;
+            }
+        };
+
+        // Capa
+        doc.setFillColor(102, 126, 234);
+        doc.rect(0, 0, pageWidth, 110, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        doc.setFont(undefined, 'bold');
+        doc.text('Histórico de Treinos', marginX, 55);
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'normal');
+        const today = new Date().toLocaleDateString('pt-BR');
+        doc.text(`Exportado em ${today}  ·  ${this.history.length} sessão(ões) registrada(s)`, marginX, 80);
+
+        y = 140;
+
+        this.history.forEach(session => {
+            checkPageBreak(50);
+
+            const dateObj = new Date(session.date);
+            const dateStr = dateObj.toLocaleDateString('pt-BR');
+            const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            const completedCount = session.exercises.filter(ex => ex.completed).length;
+
+            doc.setFillColor(245, 245, 250);
+            doc.roundedRect(marginX, y, contentWidth, 30, 6, 6, 'F');
+            doc.setFontSize(11.5);
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(40, 40, 40);
+            doc.text(session.workoutName, marginX + 10, y + 19);
+            doc.setFontSize(9);
+            doc.setFont(undefined, 'normal');
+            doc.setTextColor(110, 110, 110);
+            doc.text(`${dateStr} às ${timeStr}  ·  ${completedCount}/${session.exercises.length} concluídos`, pageWidth - marginX - 10, y + 19, { align: 'right' });
+
+            y += 40;
+
+            session.exercises.forEach(ex => {
+                checkPageBreak(16);
+                doc.setFontSize(9.5);
+                doc.setFont(undefined, 'normal');
+                if (ex.completed) {
+                    doc.setTextColor(30, 120, 60);
+                } else {
+                    doc.setTextColor(170, 50, 50);
+                }
+                const mark = ex.completed ? '[OK]' : '[X]';
+                let line = `${mark} ${ex.name} — ${ex.sets}x${ex.reps}`;
+                if (ex.weight) line += `  ·  ${ex.weight}`;
+                doc.text(line, marginX + 14, y);
+                y += 14;
+            });
+
+            y += 16;
+        });
+
+        // Rodapé com paginação
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let p = 1; p <= totalPages; p++) {
+            doc.setPage(p);
+            doc.setFontSize(8.5);
+            doc.setFont(undefined, 'normal');
+            doc.setTextColor(160, 160, 160);
+            doc.text(`Página ${p} de ${totalPages}`, pageWidth - marginX, pageHeight - 24, { align: 'right' });
+            doc.text('App Treino - Histórico', marginX, pageHeight - 24);
+        }
+
+        const date = new Date().toISOString().slice(0, 10);
+        doc.save(`app-treino-historico-${date}.pdf`);
+        this.showToast('PDF do histórico exportado com sucesso!', 'success');
+    }
+
+    // ---------- PROGRESSÃO DE CARGA ----------
+
+    // Extrai o primeiro número de uma carga digitada como texto (ex: "20kg" -> 20, "10 e 12,5 kg" -> 10)
+    parseWeightNumber(weightStr) {
+        if (!weightStr) return null;
+        const match = weightStr.replace(',', '.').match(/(\d+(\.\d+)?)/);
+        return match ? parseFloat(match[1]) : null;
+    }
+
+    destroyProgressCharts() {
+        this.progressCharts.forEach(chart => chart.destroy());
+        this.progressCharts = [];
+    }
+
+    // Monta, a partir do histórico, a evolução de carga por exercício ao longo do tempo
+    buildProgressionData() {
+        const byExercise = {};
+
+        // Ordena o histórico do mais antigo para o mais novo (para o gráfico ficar em ordem cronológica)
+        const sortedHistory = [...this.history].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        sortedHistory.forEach(session => {
+            session.exercises.forEach(ex => {
+                const weightNum = this.parseWeightNumber(ex.weight);
+                if (weightNum === null) return;
+
+                if (!byExercise[ex.name]) {
+                    byExercise[ex.name] = [];
+                }
+                byExercise[ex.name].push({
+                    date: session.date,
+                    weight: weightNum,
+                    rawWeight: ex.weight
+                });
+            });
+        });
+
+        return byExercise;
+    }
+
+    renderProgress() {
+        this.destroyProgressCharts();
+        const list = document.getElementById('progressList');
+        list.innerHTML = '';
+
+        const data = this.buildProgressionData();
+        const exerciseNames = Object.keys(data);
+
+        if (exerciseNames.length === 0) {
+            list.innerHTML = `
+                <div class="empty-progress">
+                    <p>Ainda não há dados de progressão.</p>
+                    <p>Finalize treinos com o campo de carga preenchido (ex: "20kg") para acompanhar sua evolução aqui.</p>
+                </div>
+            `;
+            return;
+        }
+
+        exerciseNames.forEach((name, index) => {
+            const points = data[name];
+            const canvasId = `progressChart_${index}`;
+
+            const card = document.createElement('div');
+            card.className = 'progress-card';
+
+            const first = points[0].weight;
+            const last = points[points.length - 1].weight;
+            const diff = last - first;
+            let diffText = 'sem variação';
+            if (diff > 0) diffText = `+${diff.toFixed(1)} desde o início`;
+            if (diff < 0) diffText = `${diff.toFixed(1)} desde o início`;
+
+            card.innerHTML = `
+                <h4>${this.escapeHtml(name)}</h4>
+                <div class="progress-meta">${points.length} registro(s) · ${diffText}</div>
+                <div class="progress-chart-wrap">
+                    <canvas id="${canvasId}"></canvas>
+                </div>
+            `;
+            list.appendChild(card);
+
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: points.map(p => new Date(p.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })),
+                    datasets: [{
+                        label: 'Carga',
+                        data: points.map(p => p.weight),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.15)',
+                        tension: 0.3,
+                        fill: true,
+                        pointBackgroundColor: '#764ba2',
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => points[context.dataIndex].rawWeight
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { beginAtZero: false }
+                    }
+                }
+            });
+
+            this.progressCharts.push(chart);
+        });
     }
 
     // ---------- RENDERIZAÇÃO ----------
@@ -475,10 +1020,10 @@ class WorkoutApp {
                     ${totalCount > 0 ? `<p>${completedCount}/${totalCount} completos</p>` : ''}
                 </div>
                 <div class="tab-actions">
-                    <button class="icon-btn edit-workout-btn" title="Editar treino">
+                    <button class="icon-btn edit-workout-btn" title="Editar treino" aria-label="Editar treino">
                         <i class="fas fa-pen"></i>
                     </button>
-                    <button class="icon-btn danger delete-workout-btn" title="Excluir treino">
+                    <button class="icon-btn danger delete-workout-btn" title="Excluir treino" aria-label="Excluir treino">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
@@ -523,9 +1068,28 @@ class WorkoutApp {
         window.scrollTo(0, 0);
     }
 
-    // Voltar da tela de detalhe para a lista de treinos
+    // Voltar de qualquer tela de detalhe/histórico para a lista de treinos
     backToWorkoutList() {
-        document.querySelector('.main-content').classList.remove('view-detail');
+        document.querySelector('.main-content').classList.remove('view-detail', 'view-history', 'view-progress');
+        this.destroyProgressCharts();
+        window.scrollTo(0, 0);
+    }
+
+    // Abrir a tela de histórico de treinos realizados
+    openHistoryView() {
+        this.renderHistory();
+        const main = document.querySelector('.main-content');
+        main.classList.remove('view-detail', 'view-progress');
+        main.classList.add('view-history');
+        window.scrollTo(0, 0);
+    }
+
+    // Abrir a tela de progressão de carga
+    openProgressView() {
+        const main = document.querySelector('.main-content');
+        main.classList.remove('view-detail', 'view-history');
+        main.classList.add('view-progress');
+        this.renderProgress();
         window.scrollTo(0, 0);
     }
 
@@ -590,10 +1154,10 @@ class WorkoutApp {
                     </div>
                 </div>
                 <div class="exercise-actions">
-                    <button class="icon-btn edit-exercise-btn" title="Editar exercício">
+                    <button class="icon-btn edit-exercise-btn" title="Editar exercício" aria-label="Editar exercício">
                         <i class="fas fa-pen"></i>
                     </button>
-                    <button class="icon-btn danger delete-exercise-btn" title="Excluir exercício">
+                    <button class="icon-btn danger delete-exercise-btn" title="Excluir exercício" aria-label="Excluir exercício">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
@@ -953,7 +1517,7 @@ class WorkoutApp {
     }
 
     // Carregar dados de exemplo
-    loadSampleData() {
+    async loadSampleData() {
         if (this.workouts.length === 0) {
             const sampleWorkouts = [
                 {
@@ -1101,10 +1665,20 @@ class WorkoutApp {
             ];
 
             this.workouts = sampleWorkouts;
-            this.saveWorkouts();
+            await this.saveWorkouts();
         }
     }
 }
 
 // Inicializar aplicativo
 const app = new WorkoutApp();
+
+// Registra o service worker (necessário para o Android oferecer
+// "Instalar app" com o ícone correto, em vez do ícone/print padrão)
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js').catch(() => {
+            // Se falhar (ex.: aberto via file:// direto), o app continua funcionando normalmente
+        });
+    });
+}
