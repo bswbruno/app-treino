@@ -1682,3 +1682,41 @@ if ('serviceWorker' in navigator) {
         });
     });
 }
+
+// pop-up inicio do app
+
+const VERSION = "1.0.0";
+
+const modal = document.getElementById("welcomeModal");
+
+const close = document.getElementById("closeModal");
+
+const start = document.getElementById("btnStart");
+
+const dontShow = document.getElementById("dontShow");
+
+if(localStorage.getItem("app-version") !== VERSION){
+
+    modal.style.display="flex";
+
+}else{
+
+    modal.style.display="none";
+
+}
+
+function fecharPopup(){
+
+    if(dontShow.checked){
+
+        localStorage.setItem("app-version", VERSION);
+
+    }
+
+    modal.style.display="none";
+
+}
+
+close.addEventListener("click",fecharPopup);
+
+start.addEventListener("click",fecharPopup);
