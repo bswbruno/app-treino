@@ -34,6 +34,10 @@
     <div class="app-container">
         <!-- Header -->
         <header class="header">
+            <button type="button" id="headerBackBtn" class="btn-header-back" title="Voltar para os treinos da semana" aria-label="Voltar para os treinos da semana">
+                <i class="fas fa-arrow-left"></i>
+                <span>Voltar</span>
+            </button>
             <h1><i class="fas fa-dumbbell"></i> App Treino</h1>
             <div class="header-actions">
                 <button id="menuBtn" class="btn-icon-header" title="Mais opções" aria-label="Mais opções" aria-haspopup="true" aria-expanded="false">
@@ -54,7 +58,8 @@
         <main class="main-content">
             <!-- Workout Selection -->
             <div class="workout-selection" id="workoutSelection">
-                <h2>Seus Treinos</h2>
+                <h2>Treinos da semana</h2>
+                <p class="selection-hint">Use as setas de cada card para organizar de segunda a domingo.</p>
                 <div class="workout-tabs" id="workoutTabs">
                     <!-- Workout tabs will be generated here -->
                 </div>
@@ -63,14 +68,50 @@
             <!-- Current Workout -->
             <div class="current-workout" id="currentWorkout">
                 <div class="workout-header">
-                    <button id="backToListBtn" class="btn-back" title="Voltar para a lista de treinos" aria-label="Voltar para a lista de treinos">
-                        <i class="fas fa-arrow-left"></i> Voltar
-                    </button>
                     <h3 id="workoutTitle">Selecione um treino</h3>
                     <div class="workout-stats">
                         <span id="completedExercises">0</span> / <span id="totalExercises">0</span> exercícios
                     </div>
                 </div>
+
+                <section class="timer-panel" aria-labelledby="timerTitle">
+                    <div class="timer-panel-header">
+                        <div>
+                            <span class="timer-kicker"><i class="fas fa-stopwatch"></i> Temporizador</span>
+                            <h4 id="timerTitle">Intervalo entre séries</h4>
+                        </div>
+                        <span id="timerStatus" class="timer-status">Pronto</span>
+                    </div>
+                    <div class="timer-controls-top">
+                        <label class="timer-select-label" for="timerMode">Tipo de intervalo</label>
+                        <select id="timerMode" class="timer-mode">
+                            <option value="series">Intervalo entre séries</option>
+                            <option value="exercises">Intervalo entre exercícios</option>
+                            <option value="workouts">Intervalo entre treinos</option>
+                            <option value="free">Cronômetro livre</option>
+                        </select>
+                    </div>
+                    <div class="timer-display" id="timerDisplay" aria-live="polite">01:00</div>
+                    <div class="timer-presets" aria-label="Tempos rápidos">
+                        <button type="button" class="timer-preset" data-seconds="30">30s</button>
+                        <button type="button" class="timer-preset" data-seconds="60">1 min</button>
+                        <button type="button" class="timer-preset" data-seconds="90">1:30</button>
+                        <button type="button" class="timer-preset" data-seconds="120">2 min</button>
+                    </div>
+                    <div class="timer-custom" aria-label="Configurar tempo personalizado">
+                        <label for="timerMinutes">Min</label>
+                        <input id="timerMinutes" type="number" min="0" max="99" value="1" inputmode="numeric">
+                        <span>:</span>
+                        <label for="timerSeconds">Seg</label>
+                        <input id="timerSeconds" type="number" min="0" max="59" value="0" inputmode="numeric">
+                        <button type="button" id="timerApplyBtn">Aplicar</button>
+                    </div>
+                    <div class="timer-actions">
+                        <button type="button" id="timerStartBtn" class="btn-timer-start"><i class="fas fa-play"></i> Iniciar</button>
+                        <button type="button" id="timerResetBtn" class="btn-timer-reset"><i class="fas fa-rotate-left"></i> Zerar</button>
+                    </div>
+                    <p class="timer-hint"><i class="fas fa-volume-high"></i> Um aviso sonoro toca quando o tempo terminar.</p>
+                </section>
 
                 <div class="exercises-list" id="exercisesList">
                     <!-- Exercises will be loaded here -->
@@ -84,9 +125,6 @@
             <!-- History View -->
             <div class="history-view" id="historyView">
                 <div class="workout-header">
-                    <button id="backFromHistoryBtn" class="btn-back" title="Voltar" aria-label="Voltar para a lista de treinos">
-                        <i class="fas fa-arrow-left"></i> Voltar
-                    </button>
                     <h3>Histórico de Treinos</h3>
                     <button id="exportHistoryBtn" class="btn-secondary">
                         <i class="fas fa-file-pdf"></i> Exportar
@@ -99,9 +137,6 @@
             <!-- Progress View -->
             <div class="progress-view" id="progressView">
                 <div class="workout-header">
-                    <button id="backFromProgressBtn" class="btn-back" title="Voltar" aria-label="Voltar para a lista de treinos">
-                        <i class="fas fa-arrow-left"></i> Voltar
-                    </button>
                     <h3>Progressão de Carga</h3>
                 </div>
                 <div class="progress-list" id="progressList">
@@ -128,6 +163,27 @@
                 <div class="form-group">
                     <label for="workoutName">Nome do Treino:</label>
                     <input type="text" id="workoutName" required placeholder="Ex: Treino A - Peito e Tríceps">
+                </div>
+                <div class="form-group">
+                    <label for="workoutCategory">Foco do treino:</label>
+                    <input type="text" id="workoutCategory" placeholder="Ex: Peito, ombros e tríceps">
+                </div>
+                <div class="form-group">
+                    <label for="workoutCoverImage">Foto do card:</label>
+                    <div class="image-input-group">
+                        <input type="text" id="workoutCoverImage" placeholder="Cole aqui o link da foto na web">
+                        <button type="button" class="btn-secondary btn-choose-file" id="chooseWorkoutCoverBtn">
+                            <i class="fas fa-mobile-screen-button"></i> Inserir foto do celular
+                        </button>
+                        <input type="file" id="workoutCoverFile" accept="image/png,image/jpeg,image/jpg,image/webp" hidden>
+                    </div>
+                    <p class="field-hint">Use o campo para colar um link direto da foto ou escolha uma imagem salva no celular.</p>
+                    <div id="workoutCoverPreviewWrap" class="image-preview-wrap" style="display:none;">
+                        <img id="workoutCoverPreview" class="workout-cover-preview" alt="Pré-visualização da foto do card">
+                        <button type="button" class="icon-btn danger" id="removeWorkoutCoverBtn" title="Remover foto" aria-label="Remover foto do card">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="workoutDescription">Descrição (opcional):</label>
@@ -173,6 +229,9 @@
                         <input type="text" id="exerciseImage" placeholder="Cole uma URL ou o nome de um arquivo em img/...">
                         <button type="button" class="btn-secondary btn-choose-file" id="searchImageBtn">
                             <i class="fas fa-magnifying-glass"></i> Buscar imagem na internet
+                        </button>
+                        <button type="button" class="btn-secondary btn-choose-file" id="openChestGifsBtn">
+                            <i class="fas fa-play-circle"></i> Ver GIFs de peito no Hipertrofia.org
                         </button>
                         <button type="button" class="btn-secondary btn-choose-file" id="chooseImageFileBtn">
                             <i class="fas fa-image"></i> Escolher do celular

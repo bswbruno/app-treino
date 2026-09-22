@@ -13,6 +13,14 @@ class WorkoutApp {
         this.editingExerciseId = null;
         this.pendingDelete = null; // { type: 'workout'|'exercise'|'session', id }
         this.progressCharts = [];
+        this.timer = {
+            seconds: 60,
+            remaining: 60,
+            intervalId: null,
+            running: false,
+            mode: 'series',
+            activeExerciseId: null
+        };
         this.init();
     }
 
@@ -156,8 +164,12 @@ class WorkoutApp {
 
     // Configurar event listeners
     setupEventListeners() {
-        // Botão de voltar da tela de detalhe do treino para a lista
-        document.getElementById('backToListBtn').addEventListener('click', () => {
+        this.setHeaderBackVisibility(false);
+
+        // Botão de voltar fica fixo no cabeçalho em todas as telas
+        document.getElementById('headerBackBtn').addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
             this.backToWorkoutList();
         });
 
@@ -178,10 +190,6 @@ class WorkoutApp {
             this.openProgressView();
         });
 
-        document.getElementById('backFromProgressBtn').addEventListener('click', () => {
-            this.backToWorkoutList();
-        });
-
         document.getElementById('historyBtn').addEventListener('click', () => {
             document.getElementById('headerMenu').classList.remove('open');
             this.openHistoryView();
@@ -191,8 +199,36 @@ class WorkoutApp {
             this.finishWorkout();
         });
 
-        document.getElementById('backFromHistoryBtn').addEventListener('click', () => {
-            this.backToWorkoutList();
+        document.getElementById('timerMode').addEventListener('change', (event) => {
+            this.timer.mode = event.target.value;
+            const title = event.target.options[event.target.selectedIndex].textContent;
+            document.getElementById('timerTitle').textContent = title;
+            this.resetTimer();
+        });
+
+        document.querySelectorAll('.timer-preset').forEach(button => {
+            button.addEventListener('click', () => {
+                this.setTimerDuration(Number(button.dataset.seconds));
+            });
+        });
+
+        document.getElementById('timerStartBtn').addEventListener('click', () => {
+            this.toggleTimer();
+        });
+
+        document.getElementById('timerResetBtn').addEventListener('click', () => {
+            this.resetTimer();
+        });
+
+        document.getElementById('timerApplyBtn').addEventListener('click', () => {
+            const minutes = Math.max(0, Math.min(99, Number(document.getElementById('timerMinutes').value) || 0));
+            const seconds = Math.max(0, Math.min(59, Number(document.getElementById('timerSeconds').value) || 0));
+            const totalSeconds = minutes * 60 + seconds;
+            if (totalSeconds < 1) {
+                this.showToast('Informe pelo menos 1 segundo.', 'error');
+                return;
+            }
+            this.setTimerDuration(totalSeconds);
         });
 
         document.getElementById('exportHistoryBtn').addEventListener('click', () => {
@@ -217,6 +253,42 @@ class WorkoutApp {
             this.saveWorkoutForm();
         });
 
+        document.getElementById('chooseWorkoutCoverBtn').addEventListener('click', () => {
+            document.getElementById('workoutCoverFile').click();
+        });
+
+        document.getElementById('workoutCoverFile').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (!file.type.startsWith('image/')) {
+                this.showToast('Escolha um arquivo de imagem válido.', 'error');
+                e.target.value = '';
+                return;
+            }
+            try {
+                const dataUrl = await this.compressImageFile(file);
+                document.getElementById('workoutCoverImage').value = dataUrl;
+                this.showWorkoutCoverPreview(dataUrl);
+            } catch (err) {
+                this.showToast('Não foi possível carregar essa foto.', 'error');
+            }
+            e.target.value = '';
+        });
+
+        document.getElementById('workoutCoverImage').addEventListener('input', (e) => {
+            const value = e.target.value.trim();
+            if (value) {
+                this.showWorkoutCoverPreview(this.getImageSource(value));
+            } else {
+                this.hideWorkoutCoverPreview();
+            }
+        });
+
+        document.getElementById('removeWorkoutCoverBtn').addEventListener('click', () => {
+            document.getElementById('workoutCoverImage').value = '';
+            this.hideWorkoutCoverPreview();
+        });
+
         // Modal de adicionar/editar exercício
         document.getElementById('closeAddExerciseModal').addEventListener('click', () => {
             this.hideModal('addExerciseModal');
@@ -234,6 +306,10 @@ class WorkoutApp {
         // Buscar imagem do exercício na internet (abre o Google Imagens já com o nome preenchido)
         document.getElementById('searchImageBtn').addEventListener('click', () => {
             this.searchExerciseImage();
+        });
+
+        document.getElementById('openChestGifsBtn').addEventListener('click', () => {
+            window.open('https://www.hipertrofia.org/blog/2017/12/26/exercicios-para-peito/', '_blank', 'noopener');
         });
 
         // Escolher imagem do celular (galeria ou câmera)
@@ -405,6 +481,7 @@ class WorkoutApp {
         const submitBtn = document.getElementById('submitWorkoutBtn');
         const form = document.getElementById('addWorkoutForm');
         form.reset();
+        this.hideWorkoutCoverPreview();
 
         if (workoutId) {
             const workout = this.workouts.find(w => w.id === workoutId);
@@ -412,7 +489,10 @@ class WorkoutApp {
             title.textContent = 'Editar Treino';
             submitBtn.textContent = 'Salvar Alterações';
             document.getElementById('workoutName').value = workout.name;
+            document.getElementById('workoutCategory').value = workout.category || '';
+            document.getElementById('workoutCoverImage').value = workout.coverImage || '';
             document.getElementById('workoutDescription').value = workout.description || '';
+            if (workout.coverImage) this.showWorkoutCoverPreview(this.getImageSource(workout.coverImage));
         } else {
             title.textContent = 'Adicionar Novo Treino';
             submitBtn.textContent = 'Criar Treino';
@@ -423,6 +503,8 @@ class WorkoutApp {
 
     saveWorkoutForm() {
         const name = document.getElementById('workoutName').value.trim();
+        const category = document.getElementById('workoutCategory').value.trim();
+        const coverImage = document.getElementById('workoutCoverImage').value.trim();
         const description = document.getElementById('workoutDescription').value.trim();
 
         if (!name) {
@@ -434,6 +516,8 @@ class WorkoutApp {
             const workout = this.workouts.find(w => w.id === this.editingWorkoutId);
             if (workout) {
                 workout.name = name;
+                workout.category = category || 'Treino personalizado';
+                workout.coverImage = coverImage;
                 workout.description = description;
                 this.saveWorkouts();
                 this.renderWorkoutTabs();
@@ -446,6 +530,8 @@ class WorkoutApp {
             const newWorkout = {
                 id: Date.now().toString(),
                 name: name,
+                category: category || 'Treino personalizado',
+                coverImage: coverImage,
                 description: description,
                 exercises: [],
                 createdAt: new Date().toISOString()
@@ -525,6 +611,21 @@ class WorkoutApp {
     hideImagePreview() {
         const wrap = document.getElementById('exerciseImagePreviewWrap');
         const preview = document.getElementById('exerciseImagePreview');
+        preview.src = '';
+        wrap.style.display = 'none';
+    }
+
+    showWorkoutCoverPreview(src) {
+        const wrap = document.getElementById('workoutCoverPreviewWrap');
+        const preview = document.getElementById('workoutCoverPreview');
+        preview.onerror = () => this.hideWorkoutCoverPreview();
+        preview.src = src;
+        wrap.style.display = 'inline-flex';
+    }
+
+    hideWorkoutCoverPreview() {
+        const wrap = document.getElementById('workoutCoverPreviewWrap');
+        const preview = document.getElementById('workoutCoverPreview');
         preview.src = '';
         wrap.style.display = 'none';
     }
@@ -1002,7 +1103,9 @@ class WorkoutApp {
             return;
         }
 
-        this.workouts.forEach(workout => {
+        const weekDays = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
+
+        this.workouts.forEach((workout, workoutIndex) => {
             const tab = document.createElement('div');
             tab.className = 'workout-tab';
             if (this.currentWorkout && this.currentWorkout.id === workout.id) {
@@ -1012,9 +1115,13 @@ class WorkoutApp {
 
             const completedCount = workout.exercises.filter(ex => ex.completed).length;
             const totalCount = workout.exercises.length;
+            const coverImage = this.getImageSource(workout.coverImage);
 
             tab.innerHTML = `
+                ${coverImage ? `<img class="workout-cover" src="${coverImage}" alt="${this.escapeHtml(workout.name)}" onerror="this.style.display='none'">` : '<div class="workout-cover workout-cover-placeholder"><i class="fas fa-dumbbell"></i></div>'}
                 <div class="tab-main">
+                    <span class="workout-day"><i class="far fa-calendar"></i> ${weekDays[workoutIndex] || `Dia ${workoutIndex + 1}`}</span>
+                    <span class="workout-category">${this.escapeHtml(workout.category || 'Treino personalizado')}</span>
                     <h3>${this.escapeHtml(workout.name)}</h3>
                     <p>${workout.exercises.length} exercícios</p>
                     ${totalCount > 0 ? `<p>${completedCount}/${totalCount} completos</p>` : ''}
@@ -1044,12 +1151,71 @@ class WorkoutApp {
             });
 
             tabsContainer.appendChild(tab);
+            this.enableCardDragging(tab, tabsContainer, '.workout-tab', () => {
+                this.workouts = Array.from(tabsContainer.querySelectorAll('.workout-tab'))
+                    .map(item => this.workouts.find(savedWorkout => savedWorkout.id === item.dataset.workoutId))
+                    .filter(Boolean);
+                this.saveWorkouts();
+                this.renderWorkoutTabs();
+                this.showToast('Ordem da semana atualizada.', 'success');
+            });
         });
+    }
+
+    enableCardDragging(card, container, selector, onDrop) {
+        let pressTimer = null;
+        let isDragging = false;
+        let suppressClick = false;
+
+        const finishDrag = () => {
+            clearTimeout(pressTimer);
+            window.removeEventListener('pointermove', moveCard);
+            window.removeEventListener('pointerup', finishDrag);
+            window.removeEventListener('pointercancel', finishDrag);
+
+            if (isDragging) {
+                isDragging = false;
+                card.classList.remove('is-dragging');
+                onDrop();
+                suppressClick = true;
+                setTimeout(() => { suppressClick = false; }, 0);
+            }
+        };
+
+        const moveCard = (event) => {
+            if (!isDragging) return;
+            event.preventDefault();
+            const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(selector);
+            if (!target || target === card || target.parentElement !== container) return;
+
+            const targetRect = target.getBoundingClientRect();
+            const insertAfter = event.clientY > targetRect.top + targetRect.height / 2;
+            container.insertBefore(card, insertAfter ? target.nextSibling : target);
+        };
+
+        card.addEventListener('pointerdown', (event) => {
+            if (event.button !== 0 || event.target.closest('button, a, input, textarea')) return;
+            pressTimer = setTimeout(() => {
+                isDragging = true;
+                card.classList.add('is-dragging');
+            }, 180);
+            window.addEventListener('pointermove', moveCard, { passive: false });
+            window.addEventListener('pointerup', finishDrag);
+            window.addEventListener('pointercancel', finishDrag);
+        });
+
+        card.addEventListener('click', (event) => {
+            if (suppressClick) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        }, true);
     }
 
     // Selecionar treino
     selectWorkout(workoutId) {
         this.currentWorkout = this.workouts.find(w => w.id === workoutId);
+        this.setHeaderBackVisibility(true);
 
         document.querySelectorAll('.workout-tab').forEach(tab => {
             tab.classList.remove('active');
@@ -1070,14 +1236,147 @@ class WorkoutApp {
 
     // Voltar de qualquer tela de detalhe/histórico para a lista de treinos
     backToWorkoutList() {
-        document.querySelector('.main-content').classList.remove('view-detail', 'view-history', 'view-progress');
+        const main = document.querySelector('.main-content');
+        main.classList.remove('view-detail', 'view-history', 'view-progress');
+        this.currentWorkout = null;
+        this.stopTimer();
+        this.setHeaderBackVisibility(false);
+        this.renderWorkoutTabs();
         this.destroyProgressCharts();
         window.scrollTo(0, 0);
+    }
+
+    setTimerDuration(seconds) {
+        this.stopTimer();
+        this.timer.seconds = seconds;
+        this.timer.remaining = seconds;
+        this.timer.activeExerciseId = null;
+        this.syncCustomTimerInputs(seconds);
+        this.updateTimerDisplay();
+        this.updateTimerStatus('Pronto');
+    }
+
+    toggleTimer() {
+        if (this.timer.running) {
+            this.stopTimer();
+            this.updateTimerStatus('Pausado');
+            return;
+        }
+
+        if (this.timer.remaining <= 0) this.timer.remaining = this.timer.seconds;
+        this.timer.running = true;
+        this.updateTimerStatus('Em andamento');
+        this.updateTimerButton();
+        this.timer.intervalId = window.setInterval(() => {
+            this.timer.remaining -= 1;
+            this.updateTimerDisplay();
+            if (this.timer.remaining <= 0) this.completeTimer();
+        }, 1000);
+    }
+
+    stopTimer() {
+        if (this.timer.intervalId) window.clearInterval(this.timer.intervalId);
+        this.timer.intervalId = null;
+        this.timer.running = false;
+        this.updateTimerButton();
+    }
+
+    resetTimer() {
+        this.stopTimer();
+        this.timer.remaining = this.timer.seconds;
+        this.timer.activeExerciseId = null;
+        this.updateExerciseTimerIndicators();
+        this.updateTimerDisplay();
+        this.updateTimerStatus('Pronto');
+    }
+
+    completeTimer() {
+        this.stopTimer();
+        this.timer.remaining = 0;
+        this.updateTimerDisplay();
+        this.updateTimerStatus('Intervalo concluído');
+        this.updateExerciseTimerIndicators();
+        this.playTimerSound();
+        this.showToast('Tempo encerrado!', 'success');
+    }
+
+    updateTimerDisplay() {
+        const display = document.getElementById('timerDisplay');
+        if (!display) return;
+        const minutes = Math.floor(this.timer.remaining / 60).toString().padStart(2, '0');
+        const seconds = (this.timer.remaining % 60).toString().padStart(2, '0');
+        display.textContent = `${minutes}:${seconds}`;
+        this.updateExerciseTimerIndicators();
+    }
+
+    syncCustomTimerInputs(seconds) {
+        const minutesInput = document.getElementById('timerMinutes');
+        const secondsInput = document.getElementById('timerSeconds');
+        if (minutesInput) minutesInput.value = Math.floor(seconds / 60);
+        if (secondsInput) secondsInput.value = seconds % 60;
+    }
+
+    startExerciseTimer(exerciseId) {
+        this.timer.activeExerciseId = exerciseId;
+        this.timer.mode = 'series';
+        document.getElementById('timerMode').value = 'series';
+        document.getElementById('timerTitle').textContent = 'Intervalo entre séries';
+        this.resetTimer();
+        this.timer.activeExerciseId = exerciseId;
+        this.updateExerciseTimerIndicators();
+        this.toggleTimer();
+    }
+
+    updateExerciseTimerIndicators() {
+        document.querySelectorAll('.exercise-timer').forEach(indicator => {
+            const isActive = indicator.dataset.exerciseId === this.timer.activeExerciseId;
+            indicator.textContent = isActive ? this.formatTimer(this.timer.remaining) : '';
+            indicator.classList.toggle('running', isActive && this.timer.running);
+        });
+    }
+
+    formatTimer(seconds) {
+        const minutes = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const remainingSeconds = (seconds % 60).toString().padStart(2, '0');
+        return `${minutes}:${remainingSeconds}`;
+    }
+
+    updateTimerStatus(status) {
+        const element = document.getElementById('timerStatus');
+        if (element) element.textContent = status;
+    }
+
+    updateTimerButton() {
+        const button = document.getElementById('timerStartBtn');
+        if (!button) return;
+        button.innerHTML = this.timer.running
+            ? '<i class="fas fa-pause"></i> Pausar'
+            : '<i class="fas fa-play"></i> Iniciar';
+    }
+
+    playTimerSound() {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        const context = new AudioContextClass();
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(880, context.currentTime);
+        oscillator.frequency.setValueAtTime(660, context.currentTime + 0.18);
+        gain.gain.setValueAtTime(0.001, context.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.25, context.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.55);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start();
+        oscillator.stop(context.currentTime + 0.55);
+        oscillator.addEventListener('ended', () => context.close());
     }
 
     // Abrir a tela de histórico de treinos realizados
     openHistoryView() {
         this.renderHistory();
+        this.setHeaderBackVisibility(true);
         const main = document.querySelector('.main-content');
         main.classList.remove('view-detail', 'view-progress');
         main.classList.add('view-history');
@@ -1087,10 +1386,18 @@ class WorkoutApp {
     // Abrir a tela de progressão de carga
     openProgressView() {
         const main = document.querySelector('.main-content');
+        this.setHeaderBackVisibility(true);
         main.classList.remove('view-detail', 'view-history');
         main.classList.add('view-progress');
         this.renderProgress();
         window.scrollTo(0, 0);
+    }
+
+    setHeaderBackVisibility(isVisible) {
+        const button = document.getElementById('headerBackBtn');
+        if (!button) return;
+        button.hidden = !isVisible;
+        button.setAttribute('aria-hidden', String(!isVisible));
     }
 
     // Renderizar exercícios do treino atual
@@ -1128,6 +1435,14 @@ class WorkoutApp {
             this.currentWorkout.exercises.forEach(exercise => {
                 const exerciseCard = this.createExerciseCard(exercise);
                 exercisesList.appendChild(exerciseCard);
+                this.enableCardDragging(exerciseCard, exercisesList, '.exercise-card', () => {
+                    this.currentWorkout.exercises = Array.from(exercisesList.querySelectorAll('.exercise-card'))
+                        .map(item => this.currentWorkout.exercises.find(savedExercise => savedExercise.id === item.dataset.exerciseId))
+                        .filter(Boolean);
+                    this.saveWorkouts();
+                    this.renderExercises();
+                    this.showToast('Ordem dos exercícios atualizada.', 'success');
+                });
             });
         }
 
@@ -1139,7 +1454,6 @@ class WorkoutApp {
         const card = document.createElement('div');
         card.className = `exercise-card ${exercise.completed ? 'completed' : ''}`;
         card.dataset.exerciseId = exercise.id;
-
         const imageSrc = this.getImageSource(exercise.image);
 
         card.innerHTML = `
@@ -1168,11 +1482,18 @@ class WorkoutApp {
                 <button class="btn-complete ${exercise.completed ? 'completed' : ''}" data-action="toggle">
                     ${exercise.completed ? '<i class="fas fa-undo"></i> Desfazer' : '<i class="fas fa-check"></i> Concluir'}
                 </button>
+                <button class="btn-exercise-timer" data-action="timer" type="button">
+                    <i class="fas fa-stopwatch"></i> Intervalo
+                    <span class="exercise-timer" data-exercise-id="${exercise.id}"></span>
+                </button>
             </div>
         `;
 
         card.querySelector('[data-action="toggle"]').addEventListener('click', () => {
             this.toggleExerciseComplete(exercise.id);
+        });
+        card.querySelector('[data-action="timer"]').addEventListener('click', () => {
+            this.startExerciseTimer(exercise.id);
         });
         card.querySelector('.edit-exercise-btn').addEventListener('click', () => {
             this.openExerciseModal(exercise.id);
@@ -1182,6 +1503,21 @@ class WorkoutApp {
         });
 
         return card;
+    }
+
+    moveExercise(exerciseId, direction) {
+        if (!this.currentWorkout) return;
+
+        const exercises = this.currentWorkout.exercises;
+        const currentIndex = exercises.findIndex(exercise => exercise.id === exerciseId);
+        const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+
+        if (currentIndex < 0 || targetIndex < 0 || targetIndex >= exercises.length) return;
+
+        [exercises[currentIndex], exercises[targetIndex]] = [exercises[targetIndex], exercises[currentIndex]];
+        this.saveWorkouts();
+        this.renderExercises();
+        this.showToast('Ordem dos exercícios atualizada.', 'success');
     }
 
     // Obter fonte da imagem
@@ -1518,11 +1854,63 @@ class WorkoutApp {
 
     // Carregar dados de exemplo
     async loadSampleData() {
+        const samplePresentation = {
+            'Treino A - Peito e Tríceps': {
+                category: 'Peito e tríceps',
+                coverImage: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=900&q=85'
+            },
+            'Treino B - Costas e Bíceps': {
+                category: 'Costas e bíceps',
+                coverImage: 'https://images.unsplash.com/photo-1603287681836-b174ce5074c2?auto=format&fit=crop&w=900&q=85'
+            },
+            'Treino C - Pernas': {
+                category: 'Pernas completas',
+                coverImage: 'https://images.unsplash.com/photo-1434608519344-49d77a699ded?auto=format&fit=crop&w=900&q=85'
+            },
+            'Treino D - Ombros': {
+                category: 'Ombros',
+                coverImage: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=900&q=85'
+            }
+        };
+
+        if (this.workouts.length > 0) {
+            let changed = false;
+            this.workouts.forEach(workout => {
+                const presentation = samplePresentation[workout.name];
+                if (presentation && (!workout.category || !workout.coverImage)) {
+                    workout.category = workout.category || presentation.category;
+                    workout.coverImage = workout.coverImage || presentation.coverImage;
+                    changed = true;
+                }
+            });
+            const extraWeekWorkouts = [
+                ['Treino E - Braços', 'Bíceps e tríceps'],
+                ['Treino F - Posterior', 'Posterior e glúteos'],
+                ['Descanso ativo', 'Mobilidade e alongamento']
+            ];
+            while (this.workouts.length < 7) {
+                const [name, category] = extraWeekWorkouts[this.workouts.length - 4];
+                this.workouts.push({
+                    id: `sample-${Date.now()}-${this.workouts.length}`,
+                    name,
+                    category,
+                    description: 'Edite este treino para montar sua rotina.',
+                    exercises: [],
+                    createdAt: new Date().toISOString()
+                });
+                changed = true;
+            }
+            if (changed) await this.saveWorkouts();
+            return;
+        }
+
         if (this.workouts.length === 0) {
             const sampleWorkouts = [
                 {
                     id: '1',
                     name: 'Treino A - Peito e Tríceps',
+                    category: 'Peito e tríceps',
+                    coverImage: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=900&q=85',
                     description: 'Foco em desenvolvimento de força e hipertrofia',
                     exercises: [
                         {
@@ -1531,7 +1919,7 @@ class WorkoutApp {
                             sets: 4,
                             reps: '8-12',
                             weight: '',
-                            image: 'Barra-no-graviton.jpg',
+                            image: 'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?auto=format&fit=crop&w=900&q=85',
                             notes: 'Foque na técnica e controle da descida',
                             completed: false,
                             createdAt: new Date().toISOString()
@@ -1542,7 +1930,7 @@ class WorkoutApp {
                             sets: 3,
                             reps: '10-15',
                             weight: '',
-                            image: 'puxada-aberta.jpg',
+                            image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=900&q=85',
                             notes: 'Mantenha as costas retas',
                             completed: false,
                             createdAt: new Date().toISOString()
@@ -1553,7 +1941,7 @@ class WorkoutApp {
                             sets: 3,
                             reps: '12-15',
                             weight: '',
-                            image: 'Extensão-de-ombro-Cross.jpg',
+                            image: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=900&q=85',
                             notes: 'Controle o movimento',
                             completed: false,
                             createdAt: new Date().toISOString()
@@ -1564,6 +1952,8 @@ class WorkoutApp {
                 {
                     id: '2',
                     name: 'Treino B - Costas e Bíceps',
+                    category: 'Costas e bíceps',
+                    coverImage: 'https://images.unsplash.com/photo-1603287681836-b174ce5074c2?auto=format&fit=crop&w=900&q=85',
                     description: 'Desenvolvimento de força e definição',
                     exercises: [
                         {
@@ -1572,7 +1962,7 @@ class WorkoutApp {
                             sets: 4,
                             reps: '8-12',
                             weight: '',
-                            image: 'Remada triângulo.jpg',
+                            image: 'https://images.unsplash.com/photo-1584863231364-2edc166de6a3?auto=format&fit=crop&w=900&q=85',
                             notes: 'Puxe o cotovelo para trás',
                             completed: false,
                             createdAt: new Date().toISOString()
@@ -1583,7 +1973,7 @@ class WorkoutApp {
                             sets: 3,
                             reps: '10-15',
                             weight: '',
-                            image: 'Puxada-barra-romana.webp',
+                            image: 'https://images.unsplash.com/photo-1598971639058-fab3c3109a00?auto=format&fit=crop&w=900&q=85',
                             notes: 'Foque na contração das costas',
                             completed: false,
                             createdAt: new Date().toISOString()
@@ -1594,7 +1984,7 @@ class WorkoutApp {
                             sets: 3,
                             reps: '12-15',
                             weight: '',
-                            image: 'Remada-serrote-hbc.webp',
+                            image: 'https://images.unsplash.com/photo-1583454113628-8f0b0e6c5c7a?auto=format&fit=crop&w=900&q=85',
                             notes: 'Mantenha a postura',
                             completed: false,
                             createdAt: new Date().toISOString()
@@ -1605,6 +1995,8 @@ class WorkoutApp {
                 {
                     id: '3',
                     name: 'Treino C - Pernas',
+                    category: 'Pernas completas',
+                    coverImage: 'https://images.unsplash.com/photo-1434608519344-49d77a699ded?auto=format&fit=crop&w=900&q=85',
                     description: 'Treino focado em membros inferiores',
                     exercises: [
                         {
@@ -1613,7 +2005,7 @@ class WorkoutApp {
                             sets: 4,
                             reps: '8-12',
                             weight: '',
-                            image: '',
+                            image: 'https://images.unsplash.com/photo-1538805060514-97d9cc17730c?auto=format&fit=crop&w=900&q=85',
                             notes: 'Mantenha o peito erguido',
                             completed: false,
                             createdAt: new Date().toISOString()
@@ -1624,7 +2016,7 @@ class WorkoutApp {
                             sets: 3,
                             reps: '10-15',
                             weight: '',
-                            image: '',
+                            image: 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=900&q=85',
                             notes: 'Controle o movimento',
                             completed: false,
                             createdAt: new Date().toISOString()
@@ -1635,6 +2027,8 @@ class WorkoutApp {
                 {
                     id: '4',
                     name: 'Treino D - Ombros',
+                    category: 'Ombros',
+                    coverImage: 'https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?auto=format&fit=crop&w=900&q=85',
                     description: 'Desenvolvimento de força e estabilidade',
                     exercises: [
                         {
@@ -1643,7 +2037,7 @@ class WorkoutApp {
                             sets: 3,
                             reps: '10-12',
                             weight: '',
-                            image: 'Puxada-alta-unilateral.webp',
+                            image: 'https://images.unsplash.com/photo-1586401100295-7a841e3f6f9c?auto=format&fit=crop&w=900&q=85',
                             notes: 'Foque na técnica',
                             completed: false,
                             createdAt: new Date().toISOString()
@@ -1654,7 +2048,7 @@ class WorkoutApp {
                             sets: 3,
                             reps: '12-15',
                             weight: '',
-                            image: 'remada-unilateral.webp',
+                            image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=900&q=85',
                             notes: 'Mantenha a postura neutra',
                             completed: false,
                             createdAt: new Date().toISOString()
@@ -1663,6 +2057,33 @@ class WorkoutApp {
                     createdAt: new Date().toISOString()
                 }
             ];
+
+            sampleWorkouts.push(
+                {
+                    id: '5',
+                    name: 'Treino E - Braços',
+                    category: 'Bíceps e tríceps',
+                    description: 'Dia dedicado aos braços',
+                    exercises: [],
+                    createdAt: new Date().toISOString()
+                },
+                {
+                    id: '6',
+                    name: 'Treino F - Posterior',
+                    category: 'Posterior e glúteos',
+                    description: 'Foco na cadeia posterior',
+                    exercises: [],
+                    createdAt: new Date().toISOString()
+                },
+                {
+                    id: '7',
+                    name: 'Descanso ativo',
+                    category: 'Mobilidade e alongamento',
+                    description: 'Alongamento, mobilidade e recuperação',
+                    exercises: [],
+                    createdAt: new Date().toISOString()
+                }
+            );
 
             this.workouts = sampleWorkouts;
             await this.saveWorkouts();
