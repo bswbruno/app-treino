@@ -21,6 +21,7 @@ class WorkoutApp {
             mode: 'series',
             activeExerciseId: null
         };
+        this.timerAudioContext = null;
         this.init();
     }
 
@@ -1296,6 +1297,7 @@ class WorkoutApp {
             return;
         }
 
+        this.prepareTimerAudio();
         if (this.timer.remaining <= 0) this.timer.remaining = this.timer.seconds;
         this.timer.running = true;
         this.updateTimerStatus('Em andamento');
@@ -1411,7 +1413,9 @@ class WorkoutApp {
     playTimerSound() {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextClass) return;
-        const context = new AudioContextClass();
+        const context = this.timerAudioContext || new AudioContextClass();
+        this.timerAudioContext = context;
+        if (context.state === 'suspended') context.resume().catch(() => {});
         const oscillator = context.createOscillator();
         const gain = context.createGain();
         oscillator.type = 'sine';
@@ -1425,6 +1429,18 @@ class WorkoutApp {
         oscillator.start();
         oscillator.stop(context.currentTime + 0.55);
         oscillator.addEventListener('ended', () => context.close());
+    }
+
+    prepareTimerAudio() {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+
+        if (!this.timerAudioContext || this.timerAudioContext.state === 'closed') {
+            this.timerAudioContext = new AudioContextClass();
+        }
+        if (this.timerAudioContext.state === 'suspended') {
+            this.timerAudioContext.resume().catch(() => {});
+        }
     }
 
     // Abrir a tela de histórico de treinos realizados
