@@ -80,9 +80,15 @@
                             <span class="timer-kicker"><i class="fas fa-stopwatch"></i> Temporizador</span>
                             <h4 id="timerTitle">Intervalo entre séries</h4>
                         </div>
-                        <span id="timerStatus" class="timer-status">Pronto</span>
+                            <div class="timer-panel-header-actions">
+                                <span id="timerStatus" class="timer-status">Pronto</span>
+                                <button type="button" id="timerCollapseBtn" class="timer-collapse-btn" aria-expanded="true" aria-controls="timerBody" title="Recolher temporizador">
+                                    <i class="fas fa-chevron-up"></i>
+                                </button>
+                            </div>
                     </div>
-                    <div class="timer-controls-top">
+                        <div id="timerBody" class="timer-body">
+                        <div class="timer-controls-top">
                         <label class="timer-select-label" for="timerMode">Tipo de intervalo</label>
                         <select id="timerMode" class="timer-mode">
                             <option value="series">Intervalo entre séries</option>
@@ -111,6 +117,7 @@
                         <button type="button" id="timerResetBtn" class="btn-timer-reset"><i class="fas fa-rotate-left"></i> Zerar</button>
                     </div>
                     <p class="timer-hint"><i class="fas fa-volume-high"></i> Um aviso sonoro toca quando o tempo terminar.</p>
+                    </div>
                 </section>
 
                 <div class="exercises-list" id="exercisesList">

@@ -220,6 +220,17 @@ class WorkoutApp {
             this.resetTimer();
         });
 
+        document.getElementById('timerCollapseBtn').addEventListener('click', () => {
+            const panel = document.querySelector('.timer-panel');
+            const button = document.getElementById('timerCollapseBtn');
+            const isCollapsed = panel.classList.toggle('collapsed');
+            button.setAttribute('aria-expanded', String(!isCollapsed));
+            button.setAttribute('title', isCollapsed ? 'Expandir temporizador' : 'Recolher temporizador');
+            button.innerHTML = isCollapsed
+                ? '<i class="fas fa-chevron-down"></i>'
+                : '<i class="fas fa-chevron-up"></i>';
+        });
+
         document.getElementById('timerApplyBtn').addEventListener('click', () => {
             const minutes = Math.max(0, Math.min(99, Number(document.getElementById('timerMinutes').value) || 0));
             const seconds = Math.max(0, Math.min(59, Number(document.getElementById('timerSeconds').value) || 0));
@@ -794,6 +805,8 @@ class WorkoutApp {
 
         this.history.unshift(session);
         this.saveHistory();
+        this.currentWorkout.completed = true;
+        this.currentWorkout.completedAt = new Date().toISOString();
 
         // Reinicia as marcações de conclusão para a próxima vez que o treino for feito
         this.currentWorkout.exercises.forEach(ex => ex.completed = false);
@@ -1107,7 +1120,7 @@ class WorkoutApp {
 
         this.workouts.forEach((workout, workoutIndex) => {
             const tab = document.createElement('div');
-            tab.className = 'workout-tab';
+            tab.className = `workout-tab ${workout.completed ? 'completed' : ''}`;
             if (this.currentWorkout && this.currentWorkout.id === workout.id) {
                 tab.classList.add('active');
             }
@@ -1127,6 +1140,10 @@ class WorkoutApp {
                     ${totalCount > 0 ? `<p>${completedCount}/${totalCount} completos</p>` : ''}
                 </div>
                 <div class="tab-actions">
+                    <button class="workout-complete-btn" title="Marcar treino como concluído" aria-label="Marcar ${this.escapeHtml(workout.name)} como concluído">
+                        <i class="fas ${workout.completed ? 'fa-check-circle' : 'fa-circle-check'}"></i>
+                        ${workout.completed ? 'Concluído' : 'Concluir'}
+                    </button>
                     <button class="icon-btn edit-workout-btn" title="Editar treino" aria-label="Editar treino">
                         <i class="fas fa-pen"></i>
                     </button>
@@ -1150,6 +1167,11 @@ class WorkoutApp {
                 this.deleteWorkout(workout.id);
             });
 
+            tab.querySelector('.workout-complete-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleWorkoutCompleted(workout.id);
+            });
+
             tabsContainer.appendChild(tab);
             this.enableCardDragging(tab, tabsContainer, '.workout-tab', () => {
                 this.workouts = Array.from(tabsContainer.querySelectorAll('.workout-tab'))
@@ -1160,6 +1182,17 @@ class WorkoutApp {
                 this.showToast('Ordem da semana atualizada.', 'success');
             });
         });
+    }
+
+    toggleWorkoutCompleted(workoutId) {
+        const workout = this.workouts.find(item => item.id === workoutId);
+        if (!workout) return;
+
+        workout.completed = !workout.completed;
+        workout.completedAt = workout.completed ? new Date().toISOString() : null;
+        this.saveWorkouts();
+        this.renderWorkoutTabs();
+        this.showToast(workout.completed ? 'Treino concluído!' : 'Treino reaberto.', 'success');
     }
 
     enableCardDragging(card, container, selector, onDrop) {
@@ -1317,21 +1350,42 @@ class WorkoutApp {
     }
 
     startExerciseTimer(exerciseId) {
-        this.timer.activeExerciseId = exerciseId;
+        const normalizedId = String(exerciseId);
+        if (this.timer.activeExerciseId === normalizedId) {
+            if (this.timer.remaining <= 0) {
+                this.resetTimer();
+                this.timer.activeExerciseId = normalizedId;
+            }
+            this.toggleTimer();
+            this.updateExerciseTimerIndicators();
+            return;
+        }
+
+        this.timer.activeExerciseId = String(exerciseId);
         this.timer.mode = 'series';
         document.getElementById('timerMode').value = 'series';
         document.getElementById('timerTitle').textContent = 'Intervalo entre séries';
         this.resetTimer();
-        this.timer.activeExerciseId = exerciseId;
+        this.timer.activeExerciseId = String(exerciseId);
         this.updateExerciseTimerIndicators();
         this.toggleTimer();
     }
 
     updateExerciseTimerIndicators() {
         document.querySelectorAll('.exercise-timer').forEach(indicator => {
-            const isActive = indicator.dataset.exerciseId === this.timer.activeExerciseId;
+            const isActive = String(indicator.dataset.exerciseId) === String(this.timer.activeExerciseId);
             indicator.textContent = isActive ? this.formatTimer(this.timer.remaining) : '';
+            indicator.classList.toggle('visible', isActive);
             indicator.classList.toggle('running', isActive && this.timer.running);
+
+            const timerButton = indicator.closest('.exercise-card')?.querySelector('[data-action="timer"]');
+            if (timerButton) {
+                timerButton.innerHTML = isActive && this.timer.running
+                    ? '<i class="fas fa-pause"></i> Pausar'
+                    : isActive && this.timer.remaining > 0
+                        ? '<i class="fas fa-play"></i> Continuar'
+                        : '<i class="fas fa-stopwatch"></i> Intervalo';
+            }
         });
     }
 
@@ -1459,7 +1513,12 @@ class WorkoutApp {
         card.innerHTML = `
             <div class="exercise-header">
                 <div class="exercise-info">
-                    <h4>${this.escapeHtml(exercise.name)}</h4>
+                    <div class="exercise-title-row">
+                        <h4>${this.escapeHtml(exercise.name)}</h4>
+                        <button class="icon-btn collapse-exercise-btn timer-like-collapse-btn" title="Recolher exercício" aria-label="Recolher exercício" aria-expanded="true">
+                            <i class="fas fa-chevron-up"></i>
+                        </button>
+                    </div>
                     <div class="exercise-details">
                         <span><i class="fas fa-layer-group"></i> ${exercise.sets} séries</span>
                         <span><i class="fas fa-repeat"></i> ${this.escapeHtml(exercise.reps)}</span>
@@ -1476,16 +1535,20 @@ class WorkoutApp {
                     </button>
                 </div>
             </div>
+            <div class="exercise-body">
             ${imageSrc ? `<img src="${imageSrc}" alt="${this.escapeHtml(exercise.name)}" class="exercise-image" onerror="this.style.display='none'">` : ''}
             ${exercise.notes ? `<div class="exercise-notes"><strong>Observações:</strong> ${this.escapeHtml(exercise.notes)}</div>` : ''}
             <div class="exercise-footer">
-                <button class="btn-complete ${exercise.completed ? 'completed' : ''}" data-action="toggle">
-                    ${exercise.completed ? '<i class="fas fa-undo"></i> Desfazer' : '<i class="fas fa-check"></i> Concluir'}
-                </button>
-                <button class="btn-exercise-timer" data-action="timer" type="button">
-                    <i class="fas fa-stopwatch"></i> Intervalo
-                    <span class="exercise-timer" data-exercise-id="${exercise.id}"></span>
-                </button>
+                <div class="exercise-footer-actions">
+                    <button class="btn-complete ${exercise.completed ? 'completed' : ''}" data-action="toggle">
+                        ${exercise.completed ? '<i class="fas fa-undo"></i> Desfazer' : '<i class="fas fa-check"></i> Concluir'}
+                    </button>
+                    <button class="btn-exercise-timer" data-action="timer" type="button">
+                        <i class="fas fa-stopwatch"></i> Intervalo
+                    </button>
+                </div>
+                <span class="exercise-timer" data-exercise-id="${exercise.id}" aria-live="polite"></span>
+            </div>
             </div>
         `;
 
@@ -1494,6 +1557,17 @@ class WorkoutApp {
         });
         card.querySelector('[data-action="timer"]').addEventListener('click', () => {
             this.startExerciseTimer(exercise.id);
+        });
+        card.querySelector('.collapse-exercise-btn').addEventListener('click', (event) => {
+            event.stopPropagation();
+            const isCollapsed = card.classList.toggle('collapsed');
+            const button = event.currentTarget;
+            button.setAttribute('aria-expanded', String(!isCollapsed));
+            button.setAttribute('title', isCollapsed ? 'Expandir exercício' : 'Recolher exercício');
+            button.setAttribute('aria-label', isCollapsed ? 'Expandir exercício' : 'Recolher exercício');
+            button.innerHTML = isCollapsed
+                ? '<i class="fas fa-chevron-down"></i>'
+                : '<i class="fas fa-chevron-up"></i>';
         });
         card.querySelector('.edit-exercise-btn').addEventListener('click', () => {
             this.openExerciseModal(exercise.id);

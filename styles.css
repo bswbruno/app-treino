@@ -595,6 +595,38 @@ body.modal-open {
     color: #ffe6a7;
 }
 
+.workout-tab.completed {
+    border-color: #28a745;
+    background: linear-gradient(135deg, #f5fff7, #e7f8ea);
+}
+
+.workout-tab.completed .workout-day,
+.workout-tab.completed .workout-category,
+.workout-tab.completed .tab-main h3 {
+    color: #1e7e34;
+}
+
+.workout-complete-btn {
+    border: 0;
+    border-radius: 8px;
+    background: #e8f6eb;
+    color: #1e7e34;
+    padding: 0.45rem 0.55rem;
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.workout-complete-btn:hover {
+    background: #ccefd3;
+}
+
+.workout-tab.completed .workout-complete-btn {
+    background: #28a745;
+    color: white;
+}
+
 /* Current Workout */
 .current-workout {
     background: white;
@@ -642,6 +674,42 @@ body.modal-open {
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
+}
+
+.timer-panel-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.timer-collapse-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid #dfe3ec;
+    border-radius: 8px;
+    background: white;
+    color: #5667d9;
+    cursor: pointer;
+}
+
+.timer-collapse-btn:hover,
+.timer-collapse-btn:focus-visible {
+    background: #eef0ff;
+    outline: none;
+}
+
+.timer-body {
+    overflow: hidden;
+    max-height: 700px;
+    opacity: 1;
+    transition: max-height 0.25s ease, opacity 0.2s ease, margin-top 0.25s ease;
+}
+
+.timer-panel.collapsed .timer-body {
+    max-height: 0;
+    margin-top: 0;
+    opacity: 0;
+    pointer-events: none;
 }
 
 .timer-kicker {
@@ -807,12 +875,21 @@ body.modal-open {
     background: linear-gradient(135deg, #f8fff9, #e8f5e8);
 }
 
+.exercise-card.collapsed .exercise-body {
+    display: none;
+}
+
+.exercise-card.completed .exercise-actions .icon-btn {
+    background: rgba(40, 167, 69, 0.12);
+}
+
 .exercise-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 1rem;
     gap: 1rem;
+    position: relative;
 }
 
 .exercise-info {
@@ -820,11 +897,42 @@ body.modal-open {
     flex: 1;
 }
 
+.exercise-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.6rem;
+}
+
 .exercise-info h4 {
     color: #333;
     font-size: 1.2rem;
     margin-bottom: 0.5rem;
+    padding-right: 2.6rem;
     word-break: break-word;
+}
+
+.exercise-title-row .collapse-exercise-btn {
+    flex-shrink: 0;
+    position: absolute;
+    top: 0.05rem;
+    right: 0;
+}
+
+.timer-like-collapse-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid #dfe3ec;
+    border-radius: 8px;
+    background: white;
+    color: #5667d9;
+}
+
+.timer-like-collapse-btn:hover,
+.timer-like-collapse-btn:focus-visible {
+    background: #eef0ff;
+    color: #5667d9;
+    outline: none;
 }
 
 .exercise-details {
@@ -910,12 +1018,19 @@ body.modal-open {
 
 .exercise-footer {
     margin-top: 1rem;
+    display: block;
+}
+
+.exercise-footer-actions {
     display: flex;
     gap: 0.6rem;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    align-items: stretch;
 }
 
 .btn-complete {
+    flex: 1 1 0;
+    min-width: 0;
     background: #28a745;
     color: white;
     border: none;
@@ -932,6 +1047,8 @@ body.modal-open {
 }
 
 .btn-exercise-timer {
+    flex: 1 1 0;
+    min-width: 0;
     background: #eef0ff;
     color: #5667d9;
     border: 1px solid #d9ddff;
@@ -940,6 +1057,7 @@ body.modal-open {
     font-size: 0.9rem;
     cursor: pointer;
     font-weight: 600;
+    white-space: nowrap;
 }
 
 .btn-exercise-timer:hover {
@@ -947,15 +1065,22 @@ body.modal-open {
 }
 
 .exercise-timer {
-    display: inline-block;
-    min-width: 0;
-    margin-left: 0.25rem;
+    display: none;
+    margin-top: 0.45rem;
+    color: #5667d9;
+    font-size: 1.15rem;
     font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    text-align: center;
+}
+
+.exercise-timer.visible {
+    display: block;
 }
 
 .exercise-timer.running {
-    min-width: 3.2rem;
-    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: #667eea;
 }
 
 .btn-complete.completed {
@@ -1348,6 +1473,22 @@ form {
     .exercise-image {
         height: 150px;
     }
+
+    .exercise-footer {
+        gap: 0.35rem;
+    }
+
+    .exercise-footer-actions {
+        gap: 0.35rem;
+    }
+
+    .btn-complete,
+    .btn-exercise-timer {
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+        font-size: 0.78rem;
+    }
+
 }
 
 /* Animações */
