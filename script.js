@@ -1693,7 +1693,7 @@ class WorkoutApp {
                 </div>
             </div>
             <div class="exercise-body">
-            ${imageSrc ? `<img src="${imageSrc}" alt="${this.escapeHtml(exercise.name)}" class="exercise-image" onerror="this.style.display='none'">` : ''}
+            ${imageSrc ? `<div class="exercise-image-frame"><img src="${imageSrc}" alt="${this.escapeHtml(exercise.name)}" class="exercise-image" onerror="this.parentElement.style.display='none'"></div>` : ''}
             ${exercise.notes ? `<div class="exercise-notes"><strong>Observações:</strong> ${this.escapeHtml(exercise.notes)}</div>` : ''}
             <div class="exercise-footer">
                 <div class="exercise-footer-actions">

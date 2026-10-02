@@ -1099,16 +1099,20 @@ body.modal-open {
     color: white;
 }
 
-.exercise-image {
+.exercise-image-frame {
     width: 100%;
-    max-width: none;
-    height: auto;
-    max-height: 520px;
-    object-fit: contain;
-    display: block;
-    border-radius: 10px;
+    aspect-ratio: 4 / 3;
     margin: 1rem 0;
+    overflow: hidden;
+    border-radius: 10px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.exercise-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .exercise-notes {
@@ -1861,10 +1865,6 @@ form {
 
     .exercise-details span {
         padding: 0.2rem 0.55rem;
-    }
-
-    .exercise-image {
-        height: 150px;
     }
 
     .exercise-footer {
