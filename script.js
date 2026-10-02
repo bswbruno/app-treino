@@ -11,6 +11,7 @@ class WorkoutApp {
         this.currentWorkout = null;
         this.editingWorkoutId = null;
         this.editingExerciseId = null;
+        this.imageCrop = null;
         this.pendingDelete = null; // { type: 'workout'|'exercise'|'session', id }
         this.progressCharts = [];
         this.timer = {
@@ -278,9 +279,7 @@ class WorkoutApp {
                 return;
             }
             try {
-                const dataUrl = await this.compressImageFile(file);
-                document.getElementById('workoutCoverImage').value = dataUrl;
-                this.showWorkoutCoverPreview(dataUrl);
+                await this.openImageCrop(file, 'workout');
             } catch (err) {
                 this.showToast('Não foi possível carregar essa foto.', 'error');
             }
@@ -340,14 +339,48 @@ class WorkoutApp {
             }
 
             try {
-                const dataUrl = await this.compressImageFile(file);
-                document.getElementById('exerciseImage').value = dataUrl;
-                this.showImagePreview(dataUrl);
+                await this.openImageCrop(file, 'exercise');
             } catch (err) {
                 this.showToast('Não foi possível carregar essa imagem.', 'error');
             }
             e.target.value = '';
         });
+
+        document.getElementById('cancelImageCrop').addEventListener('click', () => this.cancelImageCrop());
+        document.getElementById('cancelImageCropAction').addEventListener('click', () => this.cancelImageCrop());
+        document.getElementById('applyImageCrop').addEventListener('click', () => this.applyImageCrop());
+        document.getElementById('imageCropZoom').addEventListener('input', (event) => {
+            if (!this.imageCrop) return;
+            this.imageCrop.zoom = Number(event.target.value);
+            document.getElementById('imageCropZoomValue').value = `${this.imageCrop.zoom.toFixed(1)}x`;
+            this.renderImageCrop();
+        });
+
+        const cropViewport = document.getElementById('imageCropViewport');
+        cropViewport.addEventListener('pointerdown', (event) => {
+            if (!this.imageCrop) return;
+            this.imageCrop.pointerId = event.pointerId;
+            this.imageCrop.pointerX = event.clientX;
+            this.imageCrop.pointerY = event.clientY;
+            cropViewport.setPointerCapture(event.pointerId);
+            cropViewport.classList.add('is-panning');
+            event.preventDefault();
+        });
+        cropViewport.addEventListener('pointermove', (event) => {
+            if (!this.imageCrop || this.imageCrop.pointerId !== event.pointerId) return;
+            this.imageCrop.panX += event.clientX - this.imageCrop.pointerX;
+            this.imageCrop.panY += event.clientY - this.imageCrop.pointerY;
+            this.imageCrop.pointerX = event.clientX;
+            this.imageCrop.pointerY = event.clientY;
+            this.renderImageCrop();
+        });
+        const finishCropPan = (event) => {
+            if (!this.imageCrop || this.imageCrop.pointerId !== event.pointerId) return;
+            this.imageCrop.pointerId = null;
+            cropViewport.classList.remove('is-panning');
+        };
+        cropViewport.addEventListener('pointerup', finishCropPan);
+        cropViewport.addEventListener('pointercancel', finishCropPan);
 
         document.getElementById('removeImagePreviewBtn').addEventListener('click', () => {
             document.getElementById('exerciseImage').value = '';
@@ -461,7 +494,7 @@ class WorkoutApp {
         }, 200);
 
         // Só libera o scroll do body quando não houver nenhum outro modal aberto
-        const anyOpen = document.querySelectorAll('.modal.show').length > 1;
+        const anyOpen = document.querySelectorAll('.modal.show').length > 0;
         if (!anyOpen) {
             document.body.classList.remove('modal-open');
             document.body.style.top = '';
@@ -501,6 +534,7 @@ class WorkoutApp {
             title.textContent = 'Editar Treino';
             submitBtn.textContent = 'Salvar Alterações';
             document.getElementById('workoutName').value = workout.name;
+            document.getElementById('workoutDay').value = workout.day || '';
             document.getElementById('workoutCategory').value = workout.category || '';
             document.getElementById('workoutCoverImage').value = workout.coverImage || '';
             document.getElementById('workoutDescription').value = workout.description || '';
@@ -508,6 +542,7 @@ class WorkoutApp {
         } else {
             title.textContent = 'Adicionar Novo Treino';
             submitBtn.textContent = 'Criar Treino';
+            document.getElementById('workoutDay').value = '';
         }
 
         this.showModal('addWorkoutModal');
@@ -515,6 +550,7 @@ class WorkoutApp {
 
     saveWorkoutForm() {
         const name = document.getElementById('workoutName').value.trim();
+        const day = document.getElementById('workoutDay').value.trim();
         const category = document.getElementById('workoutCategory').value.trim();
         const coverImage = document.getElementById('workoutCoverImage').value.trim();
         const description = document.getElementById('workoutDescription').value.trim();
@@ -528,6 +564,7 @@ class WorkoutApp {
             const workout = this.workouts.find(w => w.id === this.editingWorkoutId);
             if (workout) {
                 workout.name = name;
+                workout.day = day;
                 workout.category = category || 'Treino personalizado';
                 workout.coverImage = coverImage;
                 workout.description = description;
@@ -542,6 +579,7 @@ class WorkoutApp {
             const newWorkout = {
                 id: Date.now().toString(),
                 name: name,
+                day: day,
                 category: category || 'Treino personalizado',
                 coverImage: coverImage,
                 description: description,
@@ -586,30 +624,100 @@ class WorkoutApp {
         this.showToast('Toque e segure a imagem escolhida e copie o link para colar aqui.', 'info');
     }
 
-    compressImageFile(file, maxSize = 1000, quality = 0.8) {
+    openImageCrop(file, target) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onerror = () => reject(new Error('Falha ao ler o arquivo'));
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onerror = () => reject(new Error('Falha ao carregar a imagem'));
-                img.onload = () => {
-                    let { width, height } = img;
-                    if (width > maxSize || height > maxSize) {
-                        const ratio = Math.min(maxSize / width, maxSize / height);
-                        width = Math.round(width * ratio);
-                        height = Math.round(height * ratio);
-                    }
-                    const canvas = document.createElement('canvas');
-                    canvas.width = width;
-                    canvas.height = height;
-                    canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-                    resolve(canvas.toDataURL('image/jpeg', quality));
+            reader.onload = () => {
+                const image = new Image();
+                image.onerror = () => reject(new Error('Falha ao carregar a imagem'));
+                image.onload = () => {
+                    const aspect = target === 'workout' ? 1 : 4 / 3;
+                    this.imageCrop = {
+                        image,
+                        target,
+                        aspect,
+                        zoom: 1,
+                        panX: 0,
+                        panY: 0,
+                        pointerId: null
+                    };
+                    const modal = document.getElementById('imageCropModal');
+                    modal.style.zIndex = '1100';
+                    document.getElementById('imageCropTitle').textContent = target === 'workout'
+                        ? 'Ajustar foto do treino'
+                        : 'Ajustar imagem do exercício';
+                    document.getElementById('imageCropZoom').value = '1';
+                    document.getElementById('imageCropZoomValue').value = '1.0x';
+                    document.getElementById('imageCropTarget').src = image.src;
+                    this.showModal('imageCropModal');
+                    requestAnimationFrame(() => this.renderImageCrop());
+                    resolve();
                 };
-                img.src = e.target.result;
+                image.src = reader.result;
             };
             reader.readAsDataURL(file);
         });
+    }
+
+    renderImageCrop() {
+        if (!this.imageCrop) return;
+        const viewport = document.getElementById('imageCropViewport');
+        const imageElement = document.getElementById('imageCropTarget');
+        const width = viewport.clientWidth;
+        const height = viewport.clientHeight;
+        if (!width || !height) return;
+
+        const scale = Math.max(width / this.imageCrop.image.naturalWidth, height / this.imageCrop.image.naturalHeight);
+        imageElement.style.width = `${this.imageCrop.image.naturalWidth * scale}px`;
+        imageElement.style.height = `${this.imageCrop.image.naturalHeight * scale}px`;
+        imageElement.style.transform = `translate(calc(-50% + ${this.imageCrop.panX}px), calc(-50% + ${this.imageCrop.panY}px)) scale(${this.imageCrop.zoom})`;
+
+        const maxPanX = (width * this.imageCrop.zoom - width) / 2 + Math.max(0, (this.imageCrop.image.naturalWidth * scale - width) / 2) * this.imageCrop.zoom;
+        const maxPanY = (height * this.imageCrop.zoom - height) / 2 + Math.max(0, (this.imageCrop.image.naturalHeight * scale - height) / 2) * this.imageCrop.zoom;
+        this.imageCrop.panX = Math.max(-maxPanX, Math.min(maxPanX, this.imageCrop.panX));
+        this.imageCrop.panY = Math.max(-maxPanY, Math.min(maxPanY, this.imageCrop.panY));
+        imageElement.style.transform = `translate(calc(-50% + ${this.imageCrop.panX}px), calc(-50% + ${this.imageCrop.panY}px)) scale(${this.imageCrop.zoom})`;
+    }
+
+    applyImageCrop() {
+        if (!this.imageCrop) return;
+        const { image, target, aspect, zoom, panX, panY } = this.imageCrop;
+        const viewport = document.getElementById('imageCropViewport');
+        const viewportWidth = viewport.clientWidth;
+        const viewportHeight = viewport.clientHeight;
+        const baseScale = Math.max(viewportWidth / image.naturalWidth, viewportHeight / image.naturalHeight);
+        const outputWidth = aspect >= 1 ? 1000 : Math.round(1000 * aspect);
+        const outputHeight = Math.round(outputWidth / aspect);
+        const canvas = document.createElement('canvas');
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
+        const context = canvas.getContext('2d');
+        if (!context) return;
+
+        const scale = baseScale * zoom * (outputWidth / viewportWidth);
+        const drawWidth = image.naturalWidth * scale;
+        const drawHeight = image.naturalHeight * scale;
+        const drawX = (outputWidth - drawWidth) / 2 + panX * (outputWidth / viewportWidth);
+        const drawY = (outputHeight - drawHeight) / 2 + panY * (outputHeight / viewportHeight);
+        context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+
+        if (target === 'workout') {
+            document.getElementById('workoutCoverImage').value = dataUrl;
+            this.showWorkoutCoverPreview(dataUrl);
+        } else {
+            document.getElementById('exerciseImage').value = dataUrl;
+            this.showImagePreview(dataUrl);
+        }
+
+        this.imageCrop = null;
+        this.hideModal('imageCropModal');
+    }
+
+    cancelImageCrop() {
+        this.imageCrop = null;
+        this.hideModal('imageCropModal');
     }
 
     showImagePreview(src) {
@@ -1117,24 +1225,26 @@ class WorkoutApp {
             return;
         }
 
-        const weekDays = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
-
-        this.workouts.forEach((workout, workoutIndex) => {
+        this.workouts.forEach((workout) => {
             const tab = document.createElement('div');
             tab.className = `workout-tab ${workout.completed ? 'completed' : ''}`;
             if (this.currentWorkout && this.currentWorkout.id === workout.id) {
                 tab.classList.add('active');
             }
             tab.dataset.workoutId = workout.id;
+            tab.workout = workout;
 
             const completedCount = workout.exercises.filter(ex => ex.completed).length;
             const totalCount = workout.exercises.length;
             const coverImage = this.getImageSource(workout.coverImage);
 
             tab.innerHTML = `
-                ${coverImage ? `<img class="workout-cover" src="${coverImage}" alt="${this.escapeHtml(workout.name)}" onerror="this.style.display='none'">` : '<div class="workout-cover workout-cover-placeholder"><i class="fas fa-dumbbell"></i></div>'}
+                <div class="workout-cover-wrap">
+                    ${coverImage ? `<img class="workout-cover" src="${coverImage}" alt="${this.escapeHtml(workout.name)}" draggable="false" onerror="this.style.display='none'">` : '<div class="workout-cover workout-cover-placeholder"><i class="fas fa-dumbbell"></i></div>'}
+                    <button class="card-drag-handle workout-drag-surface" type="button" aria-label="Segure a foto para arrastar e reordenar" title="Segure para reordenar"></button>
+                </div>
                 <div class="tab-main">
-                    <span class="workout-day"><i class="far fa-calendar"></i> ${weekDays[workoutIndex] || `Dia ${workoutIndex + 1}`}</span>
+                    ${workout.day ? `<span class="workout-day"><i class="far fa-calendar"></i> ${this.escapeHtml(workout.day)}</span>` : ''}
                     <span class="workout-category">${this.escapeHtml(workout.category || 'Treino personalizado')}</span>
                     <h3>${this.escapeHtml(workout.name)}</h3>
                     <p>${workout.exercises.length} exercícios</p>
@@ -1176,7 +1286,7 @@ class WorkoutApp {
             tabsContainer.appendChild(tab);
             this.enableCardDragging(tab, tabsContainer, '.workout-tab', () => {
                 this.workouts = Array.from(tabsContainer.querySelectorAll('.workout-tab'))
-                    .map(item => this.workouts.find(savedWorkout => savedWorkout.id === item.dataset.workoutId))
+                    .map(item => item.workout)
                     .filter(Boolean);
                 this.saveWorkouts();
                 this.renderWorkoutTabs();
@@ -1197,12 +1307,11 @@ class WorkoutApp {
     }
 
     enableCardDragging(card, container, selector, onDrop) {
-        let pressTimer = null;
         let isDragging = false;
+        let hasMoved = false;
         let suppressClick = false;
 
         const finishDrag = () => {
-            clearTimeout(pressTimer);
             window.removeEventListener('pointermove', moveCard);
             window.removeEventListener('pointerup', finishDrag);
             window.removeEventListener('pointercancel', finishDrag);
@@ -1210,9 +1319,11 @@ class WorkoutApp {
             if (isDragging) {
                 isDragging = false;
                 card.classList.remove('is-dragging');
-                onDrop();
-                suppressClick = true;
-                setTimeout(() => { suppressClick = false; }, 0);
+                if (hasMoved) {
+                    onDrop();
+                    suppressClick = true;
+                    setTimeout(() => { suppressClick = false; }, 100);
+                }
             }
         };
 
@@ -1224,15 +1335,30 @@ class WorkoutApp {
 
             const targetRect = target.getBoundingClientRect();
             const insertAfter = event.clientY > targetRect.top + targetRect.height / 2;
+            const oldRects = new Map(Array.from(container.querySelectorAll(selector), item => [item, item.getBoundingClientRect()]));
             container.insertBefore(card, insertAfter ? target.nextSibling : target);
+            const moved = Array.from(container.querySelectorAll(selector));
+            moved.forEach(item => {
+                const oldRect = oldRects.get(item);
+                if (!oldRect) return;
+                const deltaY = oldRect.top - item.getBoundingClientRect().top;
+                if (deltaY) {
+                    item.animate([
+                        { transform: `translateY(${deltaY}px)` },
+                        { transform: 'translateY(0)' }
+                    ], { duration: 170, easing: 'ease-out' });
+                }
+            });
+            hasMoved = true;
         };
 
         card.addEventListener('pointerdown', (event) => {
-            if (event.button !== 0 || event.target.closest('button, a, input, textarea')) return;
-            pressTimer = setTimeout(() => {
-                isDragging = true;
-                card.classList.add('is-dragging');
-            }, 180);
+            const dragSurface = event.target.closest('.card-drag-handle, .workout-drag-surface, .workout-cover, .workout-cover-placeholder');
+            if (event.button !== 0 || !dragSurface) return;
+            event.preventDefault();
+            isDragging = true;
+            hasMoved = false;
+            card.classList.add('is-dragging');
             window.addEventListener('pointermove', moveCard, { passive: false });
             window.addEventListener('pointerup', finishDrag);
             window.addEventListener('pointercancel', finishDrag);
@@ -1507,7 +1633,7 @@ class WorkoutApp {
                 exercisesList.appendChild(exerciseCard);
                 this.enableCardDragging(exerciseCard, exercisesList, '.exercise-card', () => {
                     this.currentWorkout.exercises = Array.from(exercisesList.querySelectorAll('.exercise-card'))
-                        .map(item => this.currentWorkout.exercises.find(savedExercise => savedExercise.id === item.dataset.exerciseId))
+                        .map(item => item.exercise)
                         .filter(Boolean);
                     this.saveWorkouts();
                     this.renderExercises();
@@ -1524,10 +1650,12 @@ class WorkoutApp {
         const card = document.createElement('div');
         card.className = `exercise-card ${exercise.completed ? 'completed' : ''}`;
         card.dataset.exerciseId = exercise.id;
+        card.exercise = exercise;
         const imageSrc = this.getImageSource(exercise.image);
 
         card.innerHTML = `
             <div class="exercise-header">
+                <button class="card-drag-handle exercise-drag-handle" type="button" aria-label="Arrastar exercício para reordenar" title="Arraste para reordenar"><i class="fas fa-grip-vertical"></i></button>
                 <div class="exercise-info">
                     <div class="exercise-title-row">
                         <h4>${this.escapeHtml(exercise.name)}</h4>

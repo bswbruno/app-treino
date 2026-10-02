@@ -490,7 +490,7 @@ body.modal-open {
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
     display: flex;
     display: grid;
-    grid-template-columns: 112px 1fr auto;
+    grid-template-columns: 112px minmax(0, 1fr) auto;
     align-items: stretch;
 }
 
@@ -500,6 +500,62 @@ body.modal-open {
     min-height: 145px;
     object-fit: cover;
     background: #eef0f5;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+
+.workout-cover-wrap {
+    position: relative;
+    min-height: 145px;
+    height: 100%;
+    overflow: hidden;
+    background: #eef0f5;
+}
+
+.workout-cover-wrap > .workout-cover {
+    display: block;
+}
+
+.workout-cover-wrap > .workout-drag-surface {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: transparent;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    transition: background-color 140ms ease;
+}
+
+.workout-cover-wrap > .workout-drag-surface:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.workout-cover-wrap > .workout-drag-surface:active {
+    background: rgba(25, 31, 45, 0.1);
+    cursor: grabbing;
+}
+
+.workout-cover-wrap > .workout-drag-surface:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.9);
+    outline-offset: -4px;
+}
+
+.workout-cover:active,
+.workout-cover-placeholder:active {
+    cursor: grabbing;
 }
 
 .workout-cover-placeholder {
@@ -508,6 +564,11 @@ body.modal-open {
     justify-content: center;
     color: white;
     font-size: 2rem;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .tab-main {
@@ -558,6 +619,7 @@ body.modal-open {
     gap: 0.4rem;
     justify-content: center;
     padding: 0.8rem;
+    min-width: 112px;
 }
 
 .workout-tab,
@@ -565,11 +627,44 @@ body.modal-open {
     touch-action: pan-y;
 }
 
+.workout-tab {
+    position: relative;
+}
+
+.card-drag-handle {
+    position: absolute;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 11px;
+    min-height: 11px;
+    padding: 0;
+    border: 0;
+    border-radius: 7px;
+    background: rgba(36, 42, 56, 0.11);
+    color: #fff;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+}
+
+.card-drag-handle:active {
+    cursor: grabbing;
+    background: #343d55;
+}
+
 .workout-tab.is-dragging,
 .exercise-card.is-dragging {
-    opacity: 0.55;
+    opacity: 0.86;
     border-color: #667eea;
-    box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 12px 28px rgba(55, 70, 120, 0.24);
+    cursor: grabbing;
+    z-index: 3;
+}
+
+.is-dragging .card-drag-handle {
     cursor: grabbing;
 }
 
@@ -856,12 +951,21 @@ body.modal-open {
 }
 
 .exercise-card {
+    position: relative;
     background: white;
     border: 2px solid #e9ecef;
     border-radius: 15px;
     padding: 1.5rem;
     transition: all 0.3s ease;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.exercise-drag-handle {
+    position: relative;
+    flex: 0 0 34px;
+    align-self: stretch;
+    min-height: 6x;
+    display: none;
 }
 
 .exercise-card:hover {
@@ -1405,13 +1509,17 @@ form {
 
     .workout-tab {
         width: 100%;
-        grid-template-columns: 88px 1fr auto;
+        grid-template-columns: 88px minmax(0, 1fr) 112px;
     }
 
     .workout-cover {
         width: 88px;
         min-height: 132px;
         object-fit: contain;
+    }
+
+    .workout-cover-wrap {
+        min-height: 132px;
     }
 
     .workout-header {
@@ -1574,30 +1682,63 @@ form {
     }
 
     .workout-tab {
-        grid-template-columns: 72px minmax(0, 1fr) 44px;
+        grid-template-columns: 84px minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto;
         border-radius: 12px;
     }
 
     .workout-cover {
-        width: 72px;
-        min-height: 112px;
+        grid-column: 1;
+        grid-row: 1 / span 2;
+        width: 84px;
+        min-height: 120px;
+    }
+
+    .workout-cover-wrap {
+        grid-column: 1;
+        grid-row: 1 / span 2;
+        min-height: 120px;
     }
 
     .tab-main {
-        padding: 0.8rem 0.6rem;
+        grid-column: 2;
+        grid-row: 1;
+        padding: 0.75rem 0.55rem 0.2rem;
+    }
+
+    .tab-actions {
+        grid-column: 2;
+        grid-row: 2;
+        flex-direction: row;
+        justify-content: flex-start;
+        align-items: center;
+        gap: 0.35rem;
+        min-width: 0;
+        padding: 0.15rem 0.55rem 0.65rem;
+    }
+
+    .workout-complete-btn {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 0.45rem 0.5rem;
+        font-size: 0.68rem;
+    }
+
+    .tab-actions .icon-btn {
+        flex: 0 0 32px;
+        width: 32px;
+        height: 32px;
+        padding: 0;
     }
 
     .tab-main h3 {
-        font-size: 0.92rem;
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
 
     .tab-main p {
         font-size: 0.74rem;
         line-height: 1.35;
-    }
-
-    .tab-actions {
-        padding: 0.5rem 0.3rem;
     }
 
     .timer-panel-header {
