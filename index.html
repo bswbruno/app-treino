@@ -282,10 +282,11 @@
                 <div id="imageCropViewport" class="image-crop-viewport">
                     <img id="imageCropTarget" alt="Prévia do enquadramento">
                 </div>
+                <p class="image-crop-hint">Arraste a foto para escolher o enquadramento.</p>
                 <div class="image-crop-zoom">
                     <label for="imageCropZoom">Zoom</label>
                     <output id="imageCropZoomValue" for="imageCropZoom">1.0x</output>
-                    <input id="imageCropZoom" type="range" min="1" max="3" step="0.01" value="1">
+                    <input id="imageCropZoom" type="range" min="0.1" max="5" step="0.01" value="1">
                 </div>
                 <div class="image-crop-actions">
                     <button id="cancelImageCropAction" class="btn-secondary" type="button">Cancelar</button>

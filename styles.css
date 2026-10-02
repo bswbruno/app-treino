@@ -1254,6 +1254,83 @@ body.modal-open {
     max-width: 420px;
 }
 
+.image-crop-modal {
+    z-index: 1100;
+}
+
+.image-crop-content {
+    max-width: 520px;
+}
+
+.image-crop-body {
+    display: grid;
+    gap: 1rem;
+    padding: 1.25rem;
+}
+
+.image-crop-viewport {
+    position: relative;
+    width: min(100%, 440px);
+    aspect-ratio: var(--crop-aspect, 1);
+    margin: 0 auto;
+    overflow: hidden;
+    border-radius: 10px;
+    background: #171a20;
+    cursor: grab;
+    touch-action: none;
+}
+
+.image-crop-viewport.is-panning {
+    cursor: grabbing;
+}
+
+.image-crop-viewport img {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: block;
+    max-width: none;
+    max-height: none;
+    object-fit: fill;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    transform-origin: center;
+}
+
+.image-crop-hint {
+    margin: 0;
+    color: #747985;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.image-crop-zoom {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    color: #414652;
+    font-weight: 600;
+}
+
+.image-crop-zoom input {
+    grid-column: 1 / -1;
+    width: 100%;
+    accent-color: #5667d9;
+}
+
+.image-crop-zoom output {
+    color: #686e7b;
+    font-variant-numeric: tabular-nums;
+}
+
+.image-crop-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+}
+
 .modal-header {
     background: linear-gradient(135deg, #667eea, #764ba2);
     color: white;
@@ -1515,7 +1592,7 @@ form {
     .workout-cover {
         width: 88px;
         min-height: 132px;
-        object-fit: contain;
+        object-fit: cover;
     }
 
     .workout-cover-wrap {

@@ -12,6 +12,7 @@ class WorkoutApp {
         this.editingWorkoutId = null;
         this.editingExerciseId = null;
         this.imageCrop = null;
+        this._modalReturnFocus = new Map();
         this.pendingDelete = null; // { type: 'workout'|'exercise'|'session', id }
         this.progressCharts = [];
         this.timer = {
@@ -411,52 +412,53 @@ class WorkoutApp {
         // Fechar modais clicando fora
         window.addEventListener('click', (e) => {
             if (e.target.classList.contains('modal')) {
-                this.hideModal(e.target.id);
+                if (e.target.id === 'imageCropModal') {
+                    this.cancelImageCrop();
+                } else {
+                    this.hideModal(e.target.id);
+                }
             }
         });
 
         // Fechar modal aberto com ESC
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                document.querySelectorAll('.modal.show').forEach(m => this.hideModal(m.id));
+                const openModals = document.querySelectorAll('.modal.show');
+                const topModal = openModals[openModals.length - 1];
+                if (topModal?.id === 'imageCropModal') this.cancelImageCrop();
+                else if (topModal) this.hideModal(topModal.id);
             }
         });
     }
 
     // Mostrar modal (corrige bug de precisar rolar a tela para ver o popup)
     showModal(modalId) {
-        // Trava o scroll da página sem "pular" a tela: guardamos a posição atual
-        // e fixamos o body nela, então o popup some/aparece sem mover o fundo.
-        this._scrollY = window.scrollY || window.pageYOffset || 0;
-        document.body.style.top = `-${this._scrollY}px`;
-        document.body.classList.add('modal-open');
-
-        // Guarda o elemento que tinha foco para devolver o foco a ele ao fechar
-        // (importante para quem navega por teclado/leitor de tela)
-        this._lastFocusedElement = document.activeElement;
+        if (!document.querySelector('.modal.show')) {
+            this._scrollY = window.scrollY || window.pageYOffset || 0;
+            document.body.style.top = `-${this._scrollY}px`;
+            document.body.classList.add('modal-open');
+        }
 
         const modal = document.getElementById(modalId);
+        this._modalReturnFocus.set(modalId, document.activeElement);
         modal.style.display = 'flex';
         modal.setAttribute('aria-hidden', 'false');
 
-        this._trapFocusHandler = (e) => this.trapFocus(e, modal);
-        modal.addEventListener('keydown', this._trapFocusHandler);
+        modal._trapFocusHandler = (e) => this.trapFocus(e, modal);
+        modal.addEventListener('keydown', modal._trapFocusHandler);
 
-        // Força reflow antes de adicionar a classe de animação
-        requestAnimationFrame(() => {
-            modal.classList.add('show');
-            const content = modal.querySelector('.modal-content');
-            if (content) content.scrollTop = 0;
-            const firstInput = modal.querySelector('input, textarea');
-            if (firstInput && window.innerWidth > 600) {
-                firstInput.focus({ preventScroll: true });
-            } else {
-                // Em telas pequenas evitamos focar um input (abriria o teclado
-                // imediatamente); focamos o modal em si para leitores de tela
-                content.setAttribute('tabindex', '-1');
-                content.focus({ preventScroll: true });
-            }
-        });
+        const content = modal.querySelector('.modal-content');
+        if (content) content.scrollTop = 0;
+        void modal.offsetWidth;
+        modal.classList.add('show');
+
+        const firstInput = modal.querySelector('input, textarea');
+        if (firstInput && window.innerWidth > 600) {
+            firstInput.focus({ preventScroll: true });
+        } else if (content) {
+            content.setAttribute('tabindex', '-1');
+            content.focus({ preventScroll: true });
+        }
     }
 
     // Mantém o foco (Tab / Shift+Tab) dentro do modal aberto, para não "vazar"
@@ -486,8 +488,9 @@ class WorkoutApp {
         const modal = document.getElementById(modalId);
         modal.classList.remove('show');
         modal.setAttribute('aria-hidden', 'true');
-        if (this._trapFocusHandler) {
-            modal.removeEventListener('keydown', this._trapFocusHandler);
+        if (modal._trapFocusHandler) {
+            modal.removeEventListener('keydown', modal._trapFocusHandler);
+            delete modal._trapFocusHandler;
         }
         setTimeout(() => {
             modal.style.display = 'none';
@@ -502,8 +505,10 @@ class WorkoutApp {
         }
 
         // Devolve o foco para quem abriu o modal
-        if (this._lastFocusedElement && document.body.contains(this._lastFocusedElement)) {
-            this._lastFocusedElement.focus();
+        const returnFocus = this._modalReturnFocus.get(modalId);
+        this._modalReturnFocus.delete(modalId);
+        if (returnFocus && document.body.contains(returnFocus)) {
+            returnFocus.focus({ preventScroll: true });
         }
     }
 
@@ -632,7 +637,15 @@ class WorkoutApp {
                 const image = new Image();
                 image.onerror = () => reject(new Error('Falha ao carregar a imagem'));
                 image.onload = () => {
-                    const aspect = target === 'workout' ? 1 : 4 / 3;
+                    const existingCover = target === 'workout'
+                        ? document.querySelector('.workout-cover-wrap')?.getBoundingClientRect()
+                        : null;
+                    const fallbackCoverWidth = window.innerWidth <= 480 ? 84 : window.innerWidth <= 768 ? 88 : 112;
+                    const aspect = target === 'workout'
+                        ? existingCover?.width && existingCover.height
+                            ? existingCover.width / existingCover.height
+                            : fallbackCoverWidth / 145
+                        : 4 / 3;
                     this.imageCrop = {
                         image,
                         target,
@@ -642,8 +655,9 @@ class WorkoutApp {
                         panY: 0,
                         pointerId: null
                     };
-                    const modal = document.getElementById('imageCropModal');
-                    modal.style.zIndex = '1100';
+                    const viewport = document.getElementById('imageCropViewport');
+                    viewport.dataset.target = target;
+                    viewport.style.setProperty('--crop-aspect', aspect);
                     document.getElementById('imageCropTitle').textContent = target === 'workout'
                         ? 'Ajustar foto do treino'
                         : 'Ajustar imagem do exercício';
@@ -664,6 +678,8 @@ class WorkoutApp {
         if (!this.imageCrop) return;
         const viewport = document.getElementById('imageCropViewport');
         const imageElement = document.getElementById('imageCropTarget');
+        const maxWidth = Math.min(440, window.innerWidth - 48, window.innerHeight * 0.52 * this.imageCrop.aspect);
+        viewport.style.width = `${Math.max(1, maxWidth)}px`;
         const width = viewport.clientWidth;
         const height = viewport.clientHeight;
         if (!width || !height) return;
@@ -673,11 +689,6 @@ class WorkoutApp {
         imageElement.style.height = `${this.imageCrop.image.naturalHeight * scale}px`;
         imageElement.style.transform = `translate(calc(-50% + ${this.imageCrop.panX}px), calc(-50% + ${this.imageCrop.panY}px)) scale(${this.imageCrop.zoom})`;
 
-        const maxPanX = (width * this.imageCrop.zoom - width) / 2 + Math.max(0, (this.imageCrop.image.naturalWidth * scale - width) / 2) * this.imageCrop.zoom;
-        const maxPanY = (height * this.imageCrop.zoom - height) / 2 + Math.max(0, (this.imageCrop.image.naturalHeight * scale - height) / 2) * this.imageCrop.zoom;
-        this.imageCrop.panX = Math.max(-maxPanX, Math.min(maxPanX, this.imageCrop.panX));
-        this.imageCrop.panY = Math.max(-maxPanY, Math.min(maxPanY, this.imageCrop.panY));
-        imageElement.style.transform = `translate(calc(-50% + ${this.imageCrop.panX}px), calc(-50% + ${this.imageCrop.panY}px)) scale(${this.imageCrop.zoom})`;
     }
 
     applyImageCrop() {
@@ -695,6 +706,8 @@ class WorkoutApp {
         const context = canvas.getContext('2d');
         if (!context) return;
 
+        context.fillStyle = '#eef0f5';
+        context.fillRect(0, 0, outputWidth, outputHeight);
         const scale = baseScale * zoom * (outputWidth / viewportWidth);
         const drawWidth = image.naturalWidth * scale;
         const drawHeight = image.naturalHeight * scale;
