@@ -30,15 +30,38 @@ class WorkoutApp {
     }
 
     async init() {
-        this.db = await this.openDatabase();
-        await this.migrateFromLocalStorageIfNeeded();
+        try {
+            this.db = await this.openDatabase();
+            await this.migrateFromLocalStorageIfNeeded();
 
-        this.workouts = await this.loadWorkouts();
-        this.history = await this.loadHistory();
+            this.workouts = await this.loadWorkouts();
+            this.history = await this.loadHistory();
+        } catch (error) {
+            console.error('Não foi possível carregar os dados salvos.', error);
+            this.setupEventListeners();
+            const tabsContainer = document.getElementById('workoutTabs');
+            tabsContainer.innerHTML = `
+                <div class="empty-tabs">
+                    <p>Não foi possível carregar seus treinos. Seus dados não foram apagados. Recarregue o app para tentar novamente.</p>
+                    <button type="button" id="retryLoadingDataBtn" class="btn-secondary">Recarregar app</button>
+                </div>
+            `;
+            document.getElementById('retryLoadingDataBtn').addEventListener('click', () => {
+                window.location.reload();
+            });
+            document.getElementById('addWorkoutBtn').disabled = true;
+            return;
+        }
 
         this.setupEventListeners();
         await this.loadSampleData();
         this.renderWorkoutTabs();
+
+        if (navigator.storage && navigator.storage.persist) {
+            navigator.storage.persist().catch(error => {
+                console.warn('Não foi possível solicitar armazenamento persistente.', error);
+            });
+        }
     }
 
     // ---------- ARMAZENAMENTO (IndexedDB, com fallback em localStorage) ----------
@@ -65,16 +88,16 @@ class WorkoutApp {
     }
 
     idbGet(key) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             if (!this.db) { resolve(undefined); return; }
             try {
                 const tx = this.db.transaction(STORE_NAME, 'readonly');
                 const store = tx.objectStore(STORE_NAME);
                 const req = store.get(key);
                 req.onsuccess = () => resolve(req.result ? req.result.value : undefined);
-                req.onerror = () => resolve(undefined);
-            } catch (err) {
-                resolve(undefined);
+                req.onerror = () => reject(req.error || new Error(`Falha ao ler ${key} do IndexedDB.`));
+            } catch (error) {
+                reject(error);
             }
         });
     }
@@ -99,43 +122,96 @@ class WorkoutApp {
     async migrateFromLocalStorageIfNeeded() {
         if (!this.db) return;
 
-        const existingWorkouts = await this.idbGet('workouts');
+        let existingWorkouts;
+        try {
+            existingWorkouts = await this.idbGet('workouts');
+        } catch (error) {
+            console.error('Não foi possível verificar os treinos no IndexedDB antes da migração.', error);
+        }
         if (existingWorkouts === undefined) {
-            const oldWorkouts = localStorage.getItem('workoutApp_data');
-            if (oldWorkouts) {
-                try {
+            try {
+                const oldWorkouts = localStorage.getItem('workoutApp_data');
+                if (oldWorkouts) {
                     await this.idbSet('workouts', JSON.parse(oldWorkouts));
-                } catch (err) { /* dados antigos inválidos: ignora */ }
+                }
+            } catch (error) {
+                console.error('Não foi possível migrar os treinos salvos anteriormente.', error);
             }
         }
 
-        const existingHistory = await this.idbGet('history');
+        let existingHistory;
+        try {
+            existingHistory = await this.idbGet('history');
+        } catch (error) {
+            console.error('Não foi possível verificar o histórico no IndexedDB antes da migração.', error);
+        }
         if (existingHistory === undefined) {
-            const oldHistory = localStorage.getItem('workoutApp_history');
-            if (oldHistory) {
-                try {
+            try {
+                const oldHistory = localStorage.getItem('workoutApp_history');
+                if (oldHistory) {
                     await this.idbSet('history', JSON.parse(oldHistory));
-                } catch (err) { /* dados antigos inválidos: ignora */ }
+                }
+            } catch (error) {
+                console.error('Não foi possível migrar o histórico salvo anteriormente.', error);
             }
         }
     }
 
+    readLocalCollection(storageKey, pendingKey, label) {
+        try {
+            const pending = localStorage.getItem(pendingKey) === '1';
+            const saved = localStorage.getItem(storageKey);
+            const value = saved ? JSON.parse(saved) : undefined;
+            if (value !== undefined && !Array.isArray(value)) {
+                throw new TypeError(`Os dados armazenados para ${label} têm um formato inválido.`);
+            }
+            return { pending, value };
+        } catch (error) {
+            console.error(`Não foi possível ler ${label} do armazenamento local.`, error);
+            this.showToast(`Não foi possível ler ${label} salvos neste navegador.`, 'error');
+            return { pending: false, value: undefined };
+        }
+    }
+
+    async loadStoredCollection(dbKey, storageKey, pendingKey, label) {
+        const local = this.readLocalCollection(storageKey, pendingKey, label);
+        let fromDb;
+        let dbReadError;
+        try {
+            fromDb = await this.idbGet(dbKey);
+        } catch (error) {
+            dbReadError = error;
+            console.error(`Não foi possível ler ${label} do IndexedDB.`, error);
+        }
+        const dbValue = Array.isArray(fromDb) ? fromDb : undefined;
+        const localHasRecoverableData = local.value &&
+            (local.pending || local.value.length > 0) &&
+            (local.pending || !dbValue || (dbValue.length === 0 && local.value.length > 0));
+
+        if (localHasRecoverableData) {
+            if (this.db && await this.idbSet(dbKey, local.value)) {
+                try {
+                    localStorage.removeItem(pendingKey);
+                } catch (error) {
+                    console.warn(`Não foi possível atualizar o marcador de ${label}.`, error);
+                }
+            }
+            return local.value;
+        }
+
+        if (dbReadError) throw dbReadError;
+        if (dbValue) return dbValue;
+        return local.value || [];
+    }
+
     // Carregar treinos
     async loadWorkouts() {
-        const localIsNewer = localStorage.getItem('workoutApp_data_pending') === '1';
-        const fromDb = await this.idbGet('workouts');
-        if (fromDb !== undefined && !localIsNewer) return fromDb;
-
-        try {
-            const saved = localStorage.getItem('workoutApp_data');
-            const workouts = saved ? JSON.parse(saved) : [];
-            if (localIsNewer && this.db && await this.idbSet('workouts', workouts)) {
-                localStorage.removeItem('workoutApp_data_pending');
-            }
-            return workouts;
-        } catch (err) {
-            return [];
-        }
+        return this.loadStoredCollection(
+            'workouts',
+            'workoutApp_data',
+            'workoutApp_data_pending',
+            'os treinos'
+        );
     }
 
     // Salvar treinos
@@ -151,7 +227,11 @@ class WorkoutApp {
         if (this.db) {
             const ok = await this.idbSet('workouts', this.workouts);
             if (ok && localSaved && saveVersion === this.workoutsSaveVersion) {
-                localStorage.removeItem('workoutApp_data_pending');
+                try {
+                    localStorage.removeItem('workoutApp_data_pending');
+                } catch (error) {
+                    console.warn('Não foi possível atualizar o marcador dos treinos.', error);
+                }
             }
             if (!ok && !localSaved) this.showToast('Não foi possível salvar. Tente novamente.', 'error');
             return;
@@ -163,20 +243,12 @@ class WorkoutApp {
 
     // Carregar histórico de treinos realizados
     async loadHistory() {
-        const localIsNewer = localStorage.getItem('workoutApp_history_pending') === '1';
-        const fromDb = await this.idbGet('history');
-        if (fromDb !== undefined && !localIsNewer) return fromDb;
-
-        try {
-            const saved = localStorage.getItem('workoutApp_history');
-            const history = saved ? JSON.parse(saved) : [];
-            if (localIsNewer && this.db && await this.idbSet('history', history)) {
-                localStorage.removeItem('workoutApp_history_pending');
-            }
-            return history;
-        } catch (err) {
-            return [];
-        }
+        return this.loadStoredCollection(
+            'history',
+            'workoutApp_history',
+            'workoutApp_history_pending',
+            'o histórico'
+        );
     }
 
     // Salvar histórico
@@ -192,7 +264,11 @@ class WorkoutApp {
         if (this.db) {
             const ok = await this.idbSet('history', this.history);
             if (ok && localSaved && saveVersion === this.historySaveVersion) {
-                localStorage.removeItem('workoutApp_history_pending');
+                try {
+                    localStorage.removeItem('workoutApp_history_pending');
+                } catch (error) {
+                    console.warn('Não foi possível atualizar o marcador do histórico.', error);
+                }
             }
             if (!ok && !localSaved) this.showToast('Não foi possível salvar o histórico.', 'error');
             return;

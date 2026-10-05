@@ -14,8 +14,9 @@ Um aplicativo web moderno e responsivo para gerenciar seus treinos na academia. 
 ## 📱 Como Usar
 
 ### 1. Acessar o App
-- Abra o arquivo `index.html` em qualquer navegador moderno
-- O app funciona offline e salva seus dados localmente
+- Abra o app em um endereço HTTPS e, na primeira vez, com conexão à internet para carregar e armazenar os arquivos necessários
+- Depois do primeiro acesso, o app pode abrir offline quando instalado/adicionado à tela inicial
+- Os treinos e o histórico ficam salvos no armazenamento local do navegador, inclusive ao fechar e reabrir o app
 
 ### 2. Criar Treinos
 - Clique em "Novo Treino" no cabeçalho
@@ -110,7 +111,8 @@ Cada treino inclui exercícios com imagens das suas fotos na pasta `img/`.
 
 ## 🔄 Backup e Sincronização
 
-- Os dados são salvos no navegador local
+- Os dados são salvos no navegador local e não são sincronizados entre dispositivos ou navegadores
+- Não limpe os dados do site/navegador, pois isso também remove os treinos salvos
 - Para backup, você pode exportar os dados do localStorage
 - Para usar em outro dispositivo, copie os arquivos e importe os dados
 
