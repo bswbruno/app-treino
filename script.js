@@ -26,6 +26,9 @@ class WorkoutApp {
             activeExerciseId: null
         };
         this.timerAudioContext = null;
+        this.timerAudioElement = null;
+        this.timerAudioUnlocked = false;
+        this.wakeLock = null;
         this.init();
     }
 
@@ -54,7 +57,13 @@ class WorkoutApp {
         }
 
         this.setupEventListeners();
-        await this.loadSampleData();
+        this.setupMobileLifecycle();
+        try {
+            await this.loadSampleData();
+        } catch (error) {
+            // Um erro aqui nunca pode impedir a lista de treinos de aparecer
+            console.error('Falha ao preparar os dados iniciais.', error);
+        }
         this.renderWorkoutTabs();
 
         if (navigator.storage && navigator.storage.persist) {
@@ -75,15 +84,38 @@ class WorkoutApp {
                 resolve(null); // navegador sem suporte: cai para localStorage
                 return;
             }
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
-            request.onupgradeneeded = (e) => {
-                const db = e.target.result;
-                if (!db.objectStoreNames.contains(STORE_NAME)) {
-                    db.createObjectStore(STORE_NAME, { keyPath: 'key' });
+            let settled = false;
+            const finish = (db) => {
+                if (settled) {
+                    // Abriu depois do tempo limite: não usamos, só fechamos
+                    if (db) db.close();
+                    return;
                 }
+                settled = true;
+                clearTimeout(timeoutId);
+                resolve(db);
             };
-            request.onsuccess = (e) => resolve(e.target.result);
-            request.onerror = () => resolve(null); // qualquer erro: cai para localStorage
+            // Em alguns celulares (principalmente com o app instalado) o
+            // IndexedDB demora ou nunca responde logo após abrir o app.
+            // Sem esse limite o app ficava esperando e a lista não aparecia.
+            const timeoutId = setTimeout(() => {
+                console.warn('IndexedDB não respondeu a tempo; usando armazenamento local.');
+                finish(null);
+            }, 4000);
+            try {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME, { keyPath: 'key' });
+                    }
+                };
+                request.onsuccess = (e) => finish(e.target.result);
+                request.onerror = () => finish(null); // qualquer erro: cai para localStorage
+                request.onblocked = () => finish(null);
+            } catch (error) {
+                finish(null);
+            }
         });
     }
 
@@ -1550,22 +1582,38 @@ class WorkoutApp {
             return;
         }
 
-        this.prepareTimerAudio();
+        // Este toque do usuário libera o som para o fim do intervalo
+        this.unlockTimerAudio();
         if (this.timer.remaining <= 0) this.timer.remaining = this.timer.seconds;
         this.timer.running = true;
+        // Usa o horário real de término: se o celular segurar o JavaScript
+        // (tela apagada, app em segundo plano), o tempo continua correto.
+        this.timer.endAt = Date.now() + this.timer.remaining * 1000;
         this.updateTimerStatus('Em andamento');
         this.updateTimerButton();
-        this.timer.intervalId = window.setInterval(() => {
-            this.timer.remaining -= 1;
+        this.requestWakeLock();
+        this.timer.intervalId = window.setInterval(() => this.tickTimer(), 250);
+    }
+
+    tickTimer() {
+        if (!this.timer.running || !this.timer.endAt) return;
+        const remaining = Math.max(0, Math.ceil((this.timer.endAt - Date.now()) / 1000));
+        if (remaining !== this.timer.remaining) {
+            this.timer.remaining = remaining;
             this.updateTimerDisplay();
-            if (this.timer.remaining <= 0) this.completeTimer();
-        }, 1000);
+        }
+        if (remaining <= 0) this.completeTimer();
     }
 
     stopTimer() {
+        if (this.timer.running && this.timer.endAt) {
+            this.timer.remaining = Math.max(0, Math.ceil((this.timer.endAt - Date.now()) / 1000));
+        }
         if (this.timer.intervalId) window.clearInterval(this.timer.intervalId);
         this.timer.intervalId = null;
+        this.timer.endAt = null;
         this.timer.running = false;
+        this.releaseWakeLock();
         this.updateTimerButton();
     }
 
@@ -1585,6 +1633,7 @@ class WorkoutApp {
         this.updateTimerStatus('Intervalo concluído');
         this.updateExerciseTimerIndicators();
         this.playTimerSound();
+        try { if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 500]); } catch (e) { /* ignora */ }
         this.showToast('Tempo encerrado!', 'success');
     }
 
@@ -1663,46 +1712,205 @@ class WorkoutApp {
             : '<i class="fas fa-play"></i> Iniciar';
     }
 
-    playTimerSound() {
-        const context = this.timerAudioContext;
-        if (!context || context.state === 'closed') return;
-        if (context.state === 'suspended') context.resume().catch(() => {});
-        const oscillator = context.createOscillator();
-        const gain = context.createGain();
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(880, context.currentTime);
-        oscillator.frequency.setValueAtTime(660, context.currentTime + 0.18);
-        gain.gain.setValueAtTime(0.001, context.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.25, context.currentTime + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.55);
-        oscillator.connect(gain);
-        gain.connect(context.destination);
-        oscillator.start();
-        oscillator.stop(context.currentTime + 0.55);
-        oscillator.addEventListener('ended', () => {
-            oscillator.disconnect();
-            gain.disconnect();
+    // ---------- SOM DO TEMPORIZADOR (pensado para celular) ----------
+    // Celulares bloqueiam áudio que não nasceu de um toque do usuário e, no
+    // iPhone, o Web Audio ainda é mudo com o botão de silencioso ligado.
+    // Por isso: (1) um <audio> comum com um bipe gerado em WAV, liberado no
+    // primeiro toque; (2) Web Audio como plano B; (3) vibração no Android.
+
+    buildBeepDataUri() {
+        const sampleRate = 22050;
+        const beeps = [
+            { freq: 880, start: 0.00, length: 0.22 },
+            { freq: 660, start: 0.30, length: 0.22 },
+            { freq: 880, start: 0.60, length: 0.22 },
+            { freq: 660, start: 0.90, length: 0.35 }
+        ];
+        const total = 1.4;
+        const samples = new Int16Array(Math.floor(sampleRate * total));
+        beeps.forEach(({ freq, start, length }) => {
+            const from = Math.floor(start * sampleRate);
+            const count = Math.floor(length * sampleRate);
+            for (let i = 0; i < count && from + i < samples.length; i++) {
+                const t = i / sampleRate;
+                const fade = Math.min(1, i / (sampleRate * 0.01), (count - i) / (sampleRate * 0.04));
+                // onda quadrada suave + senoide: mais audível no alto-falante do celular
+                const wave = Math.sin(2 * Math.PI * freq * t) + 0.35 * Math.sin(2 * Math.PI * freq * 2 * t);
+                samples[from + i] = Math.round(wave / 1.35 * fade * 0.9 * 32767);
+            }
         });
+
+        const buffer = new ArrayBuffer(44 + samples.length * 2);
+        const view = new DataView(buffer);
+        const writeText = (offset, text) => {
+            for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+        };
+        writeText(0, 'RIFF');
+        view.setUint32(4, 36 + samples.length * 2, true);
+        writeText(8, 'WAVE');
+        writeText(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeText(36, 'data');
+        view.setUint32(40, samples.length * 2, true);
+        for (let i = 0; i < samples.length; i++) view.setInt16(44 + i * 2, samples[i], true);
+
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        for (let i = 0; i < bytes.length; i += 0x8000) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        }
+        return 'data:audio/wav;base64,' + btoa(binary);
+    }
+
+    // Deve ser chamado dentro de um toque do usuário
+    unlockTimerAudio() {
+        try {
+            // iOS 16.4+: trata o áudio como "reprodução de mídia" (toca mesmo no silencioso)
+            if (navigator.audioSession) navigator.audioSession.type = 'playback';
+        } catch (e) { /* ignora */ }
+
+        if (!this.timerAudioElement) {
+            try {
+                const audio = new Audio(this.buildBeepDataUri());
+                audio.preload = 'auto';
+                audio.setAttribute('playsinline', '');
+                this.timerAudioElement = audio;
+            } catch (e) {
+                this.timerAudioElement = null;
+            }
+        }
+
+        if (this.timerAudioElement && !this.timerAudioUnlocked) {
+            const audio = this.timerAudioElement;
+            const previousVolume = audio.volume;
+            audio.muted = true;
+            const attempt = audio.play();
+            const finishUnlock = () => {
+                audio.pause();
+                audio.currentTime = 0;
+                audio.muted = false;
+                audio.volume = previousVolume;
+                this.timerAudioUnlocked = true;
+            };
+            if (attempt && typeof attempt.then === 'function') {
+                attempt.then(finishUnlock).catch(() => { audio.muted = false; });
+            } else {
+                finishUnlock();
+            }
+        }
+
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass) {
+            try {
+                if (!this.timerAudioContext || this.timerAudioContext.state === 'closed') {
+                    this.timerAudioContext = new AudioContextClass();
+                }
+                if (this.timerAudioContext.state !== 'running') {
+                    this.timerAudioContext.resume().catch(() => {});
+                }
+            } catch (e) { /* ignora */ }
+        }
     }
 
     prepareTimerAudio() {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextClass) return;
+        this.unlockTimerAudio();
+    }
 
-        if (!this.timerAudioContext || this.timerAudioContext.state === 'closed') {
-            this.timerAudioContext = new AudioContextClass();
-        }
-        if (this.timerAudioContext.state === 'suspended') {
-            this.timerAudioContext.resume().catch(() => {});
-        }
+    playTimerSound() {
+        const fallbackToWebAudio = () => this.playWebAudioBeep();
 
-        const oscillator = this.timerAudioContext.createOscillator();
-        const gain = this.timerAudioContext.createGain();
-        gain.gain.value = 0;
-        oscillator.connect(gain);
-        gain.connect(this.timerAudioContext.destination);
-        oscillator.start();
-        oscillator.stop(this.timerAudioContext.currentTime + 0.01);
+        if (this.timerAudioElement) {
+            try {
+                const audio = this.timerAudioElement;
+                audio.muted = false;
+                audio.currentTime = 0;
+                const attempt = audio.play();
+                if (attempt && typeof attempt.catch === 'function') attempt.catch(fallbackToWebAudio);
+                return;
+            } catch (e) { /* cai para o Web Audio */ }
+        }
+        fallbackToWebAudio();
+    }
+
+    playWebAudioBeep() {
+        const context = this.timerAudioContext;
+        if (!context || context.state === 'closed') return;
+        const play = () => {
+            const now = context.currentTime;
+            [880, 660, 880, 660].forEach((freq, index) => {
+                const start = now + index * 0.3;
+                const oscillator = context.createOscillator();
+                const gain = context.createGain();
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(freq, start);
+                gain.gain.setValueAtTime(0.001, start);
+                gain.gain.exponentialRampToValueAtTime(0.8, start + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.001, start + 0.24);
+                oscillator.connect(gain);
+                gain.connect(context.destination);
+                oscillator.start(start);
+                oscillator.stop(start + 0.26);
+                oscillator.addEventListener('ended', () => {
+                    oscillator.disconnect();
+                    gain.disconnect();
+                });
+            });
+        };
+        if (context.state === 'running') {
+            play();
+        } else {
+            context.resume().then(play).catch(() => {});
+        }
+    }
+
+    // Mantém a tela ligada enquanto o intervalo corre (a tela apagando
+    // pausa o JavaScript do celular e o alarme não tocaria na hora).
+    async requestWakeLock() {
+        try {
+            if (!('wakeLock' in navigator) || this.wakeLock) return;
+            this.wakeLock = await navigator.wakeLock.request('screen');
+            this.wakeLock.addEventListener('release', () => { this.wakeLock = null; });
+        } catch (e) {
+            this.wakeLock = null;
+        }
+    }
+
+    releaseWakeLock() {
+        try {
+            if (this.wakeLock) this.wakeLock.release().catch(() => {});
+        } catch (e) { /* ignora */ }
+        this.wakeLock = null;
+    }
+
+    setupMobileLifecycle() {
+        // O primeiro toque em qualquer lugar já deixa o som liberado
+        const unlockOnce = () => {
+            this.unlockTimerAudio();
+            document.removeEventListener('pointerdown', unlockOnce, true);
+            document.removeEventListener('touchend', unlockOnce, true);
+            document.removeEventListener('click', unlockOnce, true);
+        };
+        document.addEventListener('pointerdown', unlockOnce, true);
+        document.addEventListener('touchend', unlockOnce, true);
+        document.addEventListener('click', unlockOnce, true);
+
+        // Ao voltar para o app (bloqueio de tela, troca de app): reacertar o timer
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState !== 'visible') return;
+            if (this.timerAudioContext && this.timerAudioContext.state === 'suspended') {
+                this.timerAudioContext.resume().catch(() => {});
+            }
+            if (this.timer.running) {
+                this.requestWakeLock();
+                this.tickTimer();
+            }
+        });
     }
 
     // Abrir a tela de histórico de treinos realizados
@@ -2237,23 +2445,6 @@ class WorkoutApp {
                     changed = true;
                 }
             });
-            const extraWeekWorkouts = [
-                ['Treino E - Braços', 'Bíceps e tríceps'],
-                ['Treino F - Posterior', 'Posterior e glúteos'],
-                ['Descanso ativo', 'Mobilidade e alongamento']
-            ];
-            while (this.workouts.length < 7) {
-                const [name, category] = extraWeekWorkouts[this.workouts.length - 4];
-                this.workouts.push({
-                    id: `sample-${Date.now()}-${this.workouts.length}`,
-                    name,
-                    category,
-                    description: 'Edite este treino para montar sua rotina.',
-                    exercises: [],
-                    createdAt: new Date().toISOString()
-                });
-                changed = true;
-            }
             if (changed) await this.saveWorkouts();
             return;
         }
