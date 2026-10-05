@@ -175,31 +175,34 @@
                     <label for="workoutDay">Dia da semana:</label>
                     <input type="text" id="workoutDay" placeholder="Ex: Segunda-feira">
                 </div>
-                <div class="form-group">
-                    <label for="workoutCategory">Foco do treino:</label>
-                    <input type="text" id="workoutCategory" placeholder="Ex: Peito, ombros e tríceps">
-                </div>
-                <div class="form-group">
-                    <label for="workoutCoverImage">Foto do card:</label>
-                    <div class="image-input-group">
-                        <input type="text" id="workoutCoverImage" placeholder="Cole aqui o link da foto na web">
-                        <button type="button" class="btn-secondary btn-choose-file" id="chooseWorkoutCoverBtn">
-                            <i class="fas fa-mobile-screen-button"></i> Inserir foto do celular
-                        </button>
-                        <input type="file" id="workoutCoverFile" accept="image/png,image/jpeg,image/jpg,image/webp" hidden>
+                <details id="workoutOptionalFields" class="workout-optional-fields">
+                    <summary><i class="fas fa-sliders"></i> Mais detalhes (opcional)</summary>
+                    <div class="form-group">
+                        <label for="workoutCategory">Foco do treino:</label>
+                        <input type="text" id="workoutCategory" placeholder="Ex: Peito, ombros e tríceps">
                     </div>
-                    <p class="field-hint">Use o campo para colar um link direto da foto ou escolha uma imagem salva no celular.</p>
-                    <div id="workoutCoverPreviewWrap" class="image-preview-wrap" style="display:none;">
-                        <img id="workoutCoverPreview" class="workout-cover-preview" alt="Pré-visualização da foto do card">
-                        <button type="button" class="icon-btn danger" id="removeWorkoutCoverBtn" title="Remover foto" aria-label="Remover foto do card">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                    <div class="form-group">
+                        <label for="workoutCoverImage">Foto do card:</label>
+                        <div class="image-input-group">
+                            <input type="text" id="workoutCoverImage" placeholder="Cole aqui o link da foto na web">
+                            <button type="button" class="btn-secondary btn-choose-file" id="chooseWorkoutCoverBtn">
+                                <i class="fas fa-mobile-screen-button"></i> Inserir foto do celular
+                            </button>
+                            <input type="file" id="workoutCoverFile" accept="image/png,image/jpeg,image/jpg,image/webp" hidden>
+                        </div>
+                        <p class="field-hint">Use o campo para colar um link direto da foto ou escolha uma imagem salva no celular.</p>
+                        <div id="workoutCoverPreviewWrap" class="image-preview-wrap" style="display:none;">
+                            <img id="workoutCoverPreview" class="workout-cover-preview" alt="Pré-visualização da foto do card">
+                            <button type="button" class="icon-btn danger" id="removeWorkoutCoverBtn" title="Remover foto" aria-label="Remover foto do card">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
                     </div>
-                </div>
-                <div class="form-group">
-                    <label for="workoutDescription">Descrição (opcional):</label>
-                    <textarea id="workoutDescription" placeholder="Descreva o foco do treino..."></textarea>
-                </div>
+                    <div class="form-group">
+                        <label for="workoutDescription">Descrição (opcional):</label>
+                        <textarea id="workoutDescription" placeholder="Descreva o foco do treino..."></textarea>
+                    </div>
+                </details>
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" id="cancelAddWorkout">Cancelar</button>
                     <button type="submit" class="btn-primary" id="submitWorkoutBtn">Criar Treino</button>
@@ -316,118 +319,6 @@
     <!-- Toast -->
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-    
-
-    <!-- Pop-up de inicio -->
-
-    <!-- ===========================
-     Popup de Boas-vindas
-============================ -->
-<div id="welcomeModal" class="welcome-modal">
-
-    <div class="welcome-card">
-
-        <button class="close-btn" id="closeModal">
-            ✕
-        </button>
-
-        <div class="logo">
-            🏋️
-        </div>
-
-        <h1>App Treino</h1>
-
-        <p class="subtitle">
-            Organize seus treinos e acompanhe sua evolução.
-        </p>
-
-        <div class="version">
-            <span>Versão 1.0.0</span>
-        </div>
-
-        <hr>
-
-        <h2>✅ Nesta versão</h2>
-
-        <div class="feature-grid">
-
-            <div class="feature">
-                💪
-                <span>Cadastro de Exercícios</span>
-            </div>
-
-            <div class="feature">
-                📋
-                <span>Fichas de Treino</span>
-            </div>
-
-            <div class="feature">
-                🔢
-                <span>Séries e Repetições</span>
-            </div>
-
-            <div class="feature">
-                📄
-                <span>Exportação PDF</span>
-            </div>
-
-        </div>
-
-        <hr>
-
-        <h2>🚧 Em desenvolvimento</h2>
-
-        <ul class="roadmap">
-            <li>⏱ Cronômetro de descanso</li>
-            <li>📈 Evolução das cargas</li>
-            <li>📊 Dashboard de desempenho</li>
-            <li>☁ Backup automático</li>
-        </ul>
-
-        <hr>
-
-        <h2>🚀 Futuras versões</h2>
-
-        <ul class="roadmap">
-            <li>🔐 Login de usuário</li>
-            <li>📱 Aplicativo Android</li>
-            <li>🍎 Aplicativo iOS</li>
-            <li>🌐 Sincronização na nuvem</li>
-            <li>🏆 Conquistas e Metas</li>
-            <li>🤝 Compartilhamento de treinos</li>
-        </ul>
-
-        <hr>
-
-        <div class="progress-title">
-            Evolução do Projeto
-        </div>
-
-        <div class="progress">
-
-            <div class="progress-bar">
-                45%
-            </div>
-
-        </div>
-
-        <label class="checkbox">
-
-            <input type="checkbox" id="dontShow">
-
-            Não mostrar novamente
-
-        </label>
-
-        <button id="btnStart" class="start-btn">
-
-            Começar
-
-        </button>
-
-    </div>
-
-</div>
 
 
 

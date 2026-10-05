@@ -8,6 +8,8 @@ class WorkoutApp {
         this.workouts = [];
         this.history = [];
         this.db = null;
+        this.workoutsSaveVersion = 0;
+        this.historySaveVersion = 0;
         this.currentWorkout = null;
         this.editingWorkoutId = null;
         this.editingExerciseId = null;
@@ -120,47 +122,82 @@ class WorkoutApp {
 
     // Carregar treinos
     async loadWorkouts() {
+        const localIsNewer = localStorage.getItem('workoutApp_data_pending') === '1';
         const fromDb = await this.idbGet('workouts');
-        if (fromDb !== undefined) return fromDb;
+        if (fromDb !== undefined && !localIsNewer) return fromDb;
 
-        // Fallback: navegador sem IndexedDB, usa localStorage normalmente
-        const saved = localStorage.getItem('workoutApp_data');
-        return saved ? JSON.parse(saved) : [];
+        try {
+            const saved = localStorage.getItem('workoutApp_data');
+            const workouts = saved ? JSON.parse(saved) : [];
+            if (localIsNewer && this.db && await this.idbSet('workouts', workouts)) {
+                localStorage.removeItem('workoutApp_data_pending');
+            }
+            return workouts;
+        } catch (err) {
+            return [];
+        }
     }
 
     // Salvar treinos
     async saveWorkouts() {
-        if (this.db) {
-            const ok = await this.idbSet('workouts', this.workouts);
-            if (!ok) this.showToast('Não foi possível salvar. Tente novamente.', 'error');
-            return;
-        }
+        const saveVersion = ++this.workoutsSaveVersion;
+        let localSaved = false;
         try {
             localStorage.setItem('workoutApp_data', JSON.stringify(this.workouts));
-        } catch (err) {
+            localStorage.setItem('workoutApp_data_pending', '1');
+            localSaved = true;
+        } catch (err) { /* IndexedDB continua sendo a fonte principal */ }
+
+        if (this.db) {
+            const ok = await this.idbSet('workouts', this.workouts);
+            if (ok && localSaved && saveVersion === this.workoutsSaveVersion) {
+                localStorage.removeItem('workoutApp_data_pending');
+            }
+            if (!ok && !localSaved) this.showToast('Não foi possível salvar. Tente novamente.', 'error');
+            return;
+        }
+        if (!localSaved) {
             this.showToast('Armazenamento cheio. Tente remover ou usar fotos menores.', 'error');
         }
     }
 
     // Carregar histórico de treinos realizados
     async loadHistory() {
+        const localIsNewer = localStorage.getItem('workoutApp_history_pending') === '1';
         const fromDb = await this.idbGet('history');
-        if (fromDb !== undefined) return fromDb;
+        if (fromDb !== undefined && !localIsNewer) return fromDb;
 
-        const saved = localStorage.getItem('workoutApp_history');
-        return saved ? JSON.parse(saved) : [];
+        try {
+            const saved = localStorage.getItem('workoutApp_history');
+            const history = saved ? JSON.parse(saved) : [];
+            if (localIsNewer && this.db && await this.idbSet('history', history)) {
+                localStorage.removeItem('workoutApp_history_pending');
+            }
+            return history;
+        } catch (err) {
+            return [];
+        }
     }
 
     // Salvar histórico
     async saveHistory() {
-        if (this.db) {
-            const ok = await this.idbSet('history', this.history);
-            if (!ok) this.showToast('Não foi possível salvar o histórico.', 'error');
-            return;
-        }
+        const saveVersion = ++this.historySaveVersion;
+        let localSaved = false;
         try {
             localStorage.setItem('workoutApp_history', JSON.stringify(this.history));
-        } catch (err) {
+            localStorage.setItem('workoutApp_history_pending', '1');
+            localSaved = true;
+        } catch (err) { /* IndexedDB continua sendo a fonte principal */ }
+
+        if (this.db) {
+            const ok = await this.idbSet('history', this.history);
+            if (ok && localSaved && saveVersion === this.historySaveVersion) {
+                localStorage.removeItem('workoutApp_history_pending');
+            }
+            if (!ok && !localSaved) this.showToast('Não foi possível salvar o histórico.', 'error');
+            return;
+        }
+        if (!localSaved) {
             this.showToast('Armazenamento cheio. Não foi possível salvar o histórico.', 'error');
         }
     }
@@ -531,6 +568,7 @@ class WorkoutApp {
         const submitBtn = document.getElementById('submitWorkoutBtn');
         const form = document.getElementById('addWorkoutForm');
         form.reset();
+        document.getElementById('workoutOptionalFields').open = Boolean(workoutId);
         this.hideWorkoutCoverPreview();
 
         if (workoutId) {
@@ -1550,10 +1588,8 @@ class WorkoutApp {
     }
 
     playTimerSound() {
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextClass) return;
-        const context = this.timerAudioContext || new AudioContextClass();
-        this.timerAudioContext = context;
+        const context = this.timerAudioContext;
+        if (!context || context.state === 'closed') return;
         if (context.state === 'suspended') context.resume().catch(() => {});
         const oscillator = context.createOscillator();
         const gain = context.createGain();
@@ -1567,7 +1603,10 @@ class WorkoutApp {
         gain.connect(context.destination);
         oscillator.start();
         oscillator.stop(context.currentTime + 0.55);
-        oscillator.addEventListener('ended', () => context.close());
+        oscillator.addEventListener('ended', () => {
+            oscillator.disconnect();
+            gain.disconnect();
+        });
     }
 
     prepareTimerAudio() {
@@ -1580,6 +1619,14 @@ class WorkoutApp {
         if (this.timerAudioContext.state === 'suspended') {
             this.timerAudioContext.resume().catch(() => {});
         }
+
+        const oscillator = this.timerAudioContext.createOscillator();
+        const gain = this.timerAudioContext.createGain();
+        gain.gain.value = 0;
+        oscillator.connect(gain);
+        gain.connect(this.timerAudioContext.destination);
+        oscillator.start();
+        oscillator.stop(this.timerAudioContext.currentTime + 0.01);
     }
 
     // Abrir a tela de histórico de treinos realizados
@@ -2334,41 +2381,3 @@ if ('serviceWorker' in navigator) {
         });
     });
 }
-
-// pop-up inicio do app
-
-const VERSION = "1.0.0";
-
-const modal = document.getElementById("welcomeModal");
-
-const close = document.getElementById("closeModal");
-
-const start = document.getElementById("btnStart");
-
-const dontShow = document.getElementById("dontShow");
-
-if(localStorage.getItem("app-version") !== VERSION){
-
-    modal.style.display="flex";
-
-}else{
-
-    modal.style.display="none";
-
-}
-
-function fecharPopup(){
-
-    if(dontShow.checked){
-
-        localStorage.setItem("app-version", VERSION);
-
-    }
-
-    modal.style.display="none";
-
-}
-
-close.addEventListener("click",fecharPopup);
-
-start.addEventListener("click",fecharPopup);
