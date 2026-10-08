@@ -51,6 +51,7 @@
                 <button id="progressBtn"><i class="fas fa-chart-line"></i> Progressão de Carga</button>
                 <button id="historyBtn"><i class="fas fa-clock-rotate-left"></i> Histórico de Treinos</button>
                 <button id="exportBtn"><i class="fas fa-file-pdf"></i> Exportar Treinos (PDF)</button>
+                <button id="backupBtn"><i class="fas fa-floppy-disk"></i> Backup e Restauração</button>
             </div>
         </header>
 
@@ -312,6 +313,40 @@
                     <button type="button" class="btn-secondary" id="cancelConfirm">Cancelar</button>
                     <button type="button" class="btn-danger" id="confirmDeleteBtn">Excluir</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup e Restauração -->
+    <div id="backupModal" class="modal" aria-hidden="true">
+        <div class="modal-content modal-small" role="dialog" aria-modal="true" aria-labelledby="backupModalTitle">
+            <div class="modal-header">
+                <h3 id="backupModalTitle">Backup e Restauração</h3>
+                <button class="close-btn" id="closeBackupModal" aria-label="Fechar">&times;</button>
+            </div>
+            <div class="backup-body">
+                <section class="backup-section">
+                    <h4><i class="fas fa-download"></i> Fazer backup</h4>
+                    <p>Gera um arquivo com todos os seus treinos e o histórico. Use para levar os dados de um aparelho para outro.</p>
+                    <button type="button" class="btn-primary backup-btn" id="createBackupBtn">
+                        <i class="fas fa-file-export"></i> Salvar backup
+                    </button>
+                </section>
+                <section class="backup-section">
+                    <h4><i class="fas fa-upload"></i> Restaurar backup</h4>
+                    <p>Escolha um arquivo de backup gerado por este app.</p>
+                    <input type="file" id="restoreFileInput" accept=".json,application/json" hidden>
+                    <button type="button" class="btn-secondary backup-btn" id="chooseBackupBtn">
+                        <i class="fas fa-file-import"></i> Escolher arquivo
+                    </button>
+                    <div id="restorePreview" class="restore-preview" hidden>
+                        <p id="restoreSummary"></p>
+                        <div class="restore-actions">
+                            <button type="button" class="btn-danger backup-btn" id="restoreReplaceBtn">Substituir tudo pelo backup</button>
+                            <button type="button" class="btn-secondary backup-btn" id="restoreMergeBtn">Mesclar (só adicionar o que falta)</button>
+                        </div>
+                    </div>
+                </section>
             </div>
         </div>
     </div>

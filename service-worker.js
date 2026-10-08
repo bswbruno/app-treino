@@ -1,4 +1,4 @@
-const CACHE_NAME = 'app-treino-v3';
+const CACHE_NAME = 'app-treino-v4';
 const APP_SHELL = [
   './',
   './index.html',

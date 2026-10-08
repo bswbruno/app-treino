@@ -26,8 +26,6 @@ class WorkoutApp {
             activeExerciseId: null
         };
         this.timerAudioContext = null;
-        this.timerAudioElement = null;
-        this.timerAudioUnlocked = false;
         this.wakeLock = null;
         this.init();
     }
@@ -342,6 +340,24 @@ class WorkoutApp {
             document.getElementById('headerMenu').classList.remove('open');
             this.openHistoryView();
         });
+
+        // Backup e restauração
+        document.getElementById('backupBtn').addEventListener('click', () => {
+            document.getElementById('headerMenu').classList.remove('open');
+            this.openBackupModal();
+        });
+        document.getElementById('closeBackupModal').addEventListener('click', () => this.hideModal('backupModal'));
+        document.getElementById('createBackupBtn').addEventListener('click', () => this.createBackup());
+        document.getElementById('chooseBackupBtn').addEventListener('click', () => {
+            document.getElementById('restoreFileInput').click();
+        });
+        document.getElementById('restoreFileInput').addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (file) this.readBackupFile(file);
+            e.target.value = '';
+        });
+        document.getElementById('restoreReplaceBtn').addEventListener('click', () => this.applyRestore('replace'));
+        document.getElementById('restoreMergeBtn').addEventListener('click', () => this.applyRestore('merge'));
 
         document.getElementById('finishWorkoutBtn').addEventListener('click', () => {
             this.finishWorkout();
@@ -1578,6 +1594,7 @@ class WorkoutApp {
     toggleTimer() {
         if (this.timer.running) {
             this.stopTimer();
+            this.suspendTimerAudio();
             this.updateTimerStatus('Pausado');
             return;
         }
@@ -1713,132 +1730,40 @@ class WorkoutApp {
     }
 
     // ---------- SOM DO TEMPORIZADOR (pensado para celular) ----------
-    // Celulares bloqueiam áudio que não nasceu de um toque do usuário e, no
-    // iPhone, o Web Audio ainda é mudo com o botão de silencioso ligado.
-    // Por isso: (1) um <audio> comum com um bipe gerado em WAV, liberado no
-    // primeiro toque; (2) Web Audio como plano B; (3) vibração no Android.
+    // O alerta usa só Web Audio, no modo "ambient": ele se mistura ao que já
+    // está tocando (Spotify, YouTube Music etc.) em vez de pausar o outro app.
+    // (Um <audio> comum pede "foco de áudio" ao celular e é isso que faz a
+    // música parar.) Nada toca ao abrir o app: o som só dispara no fim do timer.
 
-    buildBeepDataUri() {
-        const sampleRate = 22050;
-        const beeps = [
-            { freq: 880, start: 0.00, length: 0.22 },
-            { freq: 660, start: 0.30, length: 0.22 },
-            { freq: 880, start: 0.60, length: 0.22 },
-            { freq: 660, start: 0.90, length: 0.35 }
-        ];
-        const total = 1.4;
-        const samples = new Int16Array(Math.floor(sampleRate * total));
-        beeps.forEach(({ freq, start, length }) => {
-            const from = Math.floor(start * sampleRate);
-            const count = Math.floor(length * sampleRate);
-            for (let i = 0; i < count && from + i < samples.length; i++) {
-                const t = i / sampleRate;
-                const fade = Math.min(1, i / (sampleRate * 0.01), (count - i) / (sampleRate * 0.04));
-                // onda quadrada suave + senoide: mais audível no alto-falante do celular
-                const wave = Math.sin(2 * Math.PI * freq * t) + 0.35 * Math.sin(2 * Math.PI * freq * 2 * t);
-                samples[from + i] = Math.round(wave / 1.35 * fade * 0.9 * 32767);
-            }
-        });
-
-        const buffer = new ArrayBuffer(44 + samples.length * 2);
-        const view = new DataView(buffer);
-        const writeText = (offset, text) => {
-            for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
-        };
-        writeText(0, 'RIFF');
-        view.setUint32(4, 36 + samples.length * 2, true);
-        writeText(8, 'WAVE');
-        writeText(12, 'fmt ');
-        view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true);
-        view.setUint16(22, 1, true);
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate * 2, true);
-        view.setUint16(32, 2, true);
-        view.setUint16(34, 16, true);
-        writeText(36, 'data');
-        view.setUint32(40, samples.length * 2, true);
-        for (let i = 0; i < samples.length; i++) view.setInt16(44 + i * 2, samples[i], true);
-
-        let binary = '';
-        const bytes = new Uint8Array(buffer);
-        for (let i = 0; i < bytes.length; i += 0x8000) {
-            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-        }
-        return 'data:audio/wav;base64,' + btoa(binary);
-    }
-
-    // Deve ser chamado dentro de um toque do usuário
+    // Deve ser chamado dentro de um toque do usuário (botão de iniciar o timer)
     unlockTimerAudio() {
         try {
-            // iOS 16.4+: trata o áudio como "reprodução de mídia" (toca mesmo no silencioso)
-            if (navigator.audioSession) navigator.audioSession.type = 'playback';
+            // iOS 16.4+: mistura com o áudio de outros apps, sem interromper
+            if (navigator.audioSession) navigator.audioSession.type = 'ambient';
         } catch (e) { /* ignora */ }
 
-        if (!this.timerAudioElement) {
-            try {
-                const audio = new Audio(this.buildBeepDataUri());
-                audio.preload = 'auto';
-                audio.setAttribute('playsinline', '');
-                this.timerAudioElement = audio;
-            } catch (e) {
-                this.timerAudioElement = null;
-            }
-        }
-
-        if (this.timerAudioElement && !this.timerAudioUnlocked) {
-            const audio = this.timerAudioElement;
-            const previousVolume = audio.volume;
-            audio.muted = true;
-            const attempt = audio.play();
-            const finishUnlock = () => {
-                audio.pause();
-                audio.currentTime = 0;
-                audio.muted = false;
-                audio.volume = previousVolume;
-                this.timerAudioUnlocked = true;
-            };
-            if (attempt && typeof attempt.then === 'function') {
-                attempt.then(finishUnlock).catch(() => { audio.muted = false; });
-            } else {
-                finishUnlock();
-            }
-        }
-
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioContextClass) {
-            try {
-                if (!this.timerAudioContext || this.timerAudioContext.state === 'closed') {
-                    this.timerAudioContext = new AudioContextClass();
-                }
-                if (this.timerAudioContext.state !== 'running') {
-                    this.timerAudioContext.resume().catch(() => {});
-                }
-            } catch (e) { /* ignora */ }
-        }
+        if (!AudioContextClass) return;
+        try {
+            if (!this.timerAudioContext || this.timerAudioContext.state === 'closed') {
+                this.timerAudioContext = new AudioContextClass();
+            }
+            const context = this.timerAudioContext;
+            if (context.state !== 'running') context.resume().catch(() => {});
+            // Buffer vazio (silêncio absoluto): só destrava o áudio no iOS
+            const source = context.createBufferSource();
+            source.buffer = context.createBuffer(1, 1, 22050);
+            source.connect(context.destination);
+            source.start(0);
+        } catch (e) { /* ignora */ }
     }
 
-    prepareTimerAudio() {
-        this.unlockTimerAudio();
+    suspendTimerAudio() {
+        const context = this.timerAudioContext;
+        if (context && context.state === 'running') context.suspend().catch(() => {});
     }
 
     playTimerSound() {
-        const fallbackToWebAudio = () => this.playWebAudioBeep();
-
-        if (this.timerAudioElement) {
-            try {
-                const audio = this.timerAudioElement;
-                audio.muted = false;
-                audio.currentTime = 0;
-                const attempt = audio.play();
-                if (attempt && typeof attempt.catch === 'function') attempt.catch(fallbackToWebAudio);
-                return;
-            } catch (e) { /* cai para o Web Audio */ }
-        }
-        fallbackToWebAudio();
-    }
-
-    playWebAudioBeep() {
         const context = this.timerAudioContext;
         if (!context || context.state === 'closed') return;
         const play = () => {
@@ -1861,6 +1786,8 @@ class WorkoutApp {
                     gain.disconnect();
                 });
             });
+            // Depois do bipe, solta o áudio para não segurar a sessão de som do celular
+            setTimeout(() => { if (!this.timer.running) this.suspendTimerAudio(); }, 1700);
         };
         if (context.state === 'running') {
             play();
@@ -1889,17 +1816,6 @@ class WorkoutApp {
     }
 
     setupMobileLifecycle() {
-        // O primeiro toque em qualquer lugar já deixa o som liberado
-        const unlockOnce = () => {
-            this.unlockTimerAudio();
-            document.removeEventListener('pointerdown', unlockOnce, true);
-            document.removeEventListener('touchend', unlockOnce, true);
-            document.removeEventListener('click', unlockOnce, true);
-        };
-        document.addEventListener('pointerdown', unlockOnce, true);
-        document.addEventListener('touchend', unlockOnce, true);
-        document.addEventListener('click', unlockOnce, true);
-
         // Ao voltar para o app (bloqueio de tela, troca de app): reacertar o timer
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState !== 'visible') return;
@@ -1911,6 +1827,110 @@ class WorkoutApp {
                 this.tickTimer();
             }
         });
+    }
+
+    // ---------- BACKUP E RESTAURAÇÃO ----------
+
+    openBackupModal() {
+        this.pendingRestore = null;
+        document.getElementById('restorePreview').hidden = true;
+        this.showModal('backupModal');
+    }
+
+    async createBackup() {
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+        const fileName = `backup-app-treino-${stamp}.json`;
+        const payload = {
+            app: 'app-treino',
+            version: 1,
+            exportedAt: now.toISOString(),
+            workouts: this.workouts,
+            history: this.history
+        };
+        const json = JSON.stringify(payload);
+
+        // No celular, abre a folha de compartilhar (Drive, WhatsApp, Arquivos...)
+        try {
+            const file = new File([json], fileName, { type: 'application/json' });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({ files: [file], title: 'Backup App Treino' });
+                this.showToast('Backup pronto!', 'success');
+                return;
+            }
+        } catch (error) {
+            if (error && error.name === 'AbortError') return; // a pessoa fechou a folha
+            console.warn('Compartilhamento indisponível, baixando o arquivo.', error);
+        }
+
+        // Computador (ou navegador sem compartilhamento): baixa o arquivo
+        try {
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+            this.showToast('Backup salvo!', 'success');
+        } catch (error) {
+            console.error('Falha ao gerar o backup.', error);
+            this.showToast('Não foi possível gerar o backup.', 'error');
+        }
+    }
+
+    async readBackupFile(file) {
+        this.pendingRestore = null;
+        document.getElementById('restorePreview').hidden = true;
+        try {
+            const data = JSON.parse(await file.text());
+            const workouts = Array.isArray(data) ? data : data && data.workouts;
+            const history = Array.isArray(data) ? [] : (data && data.history) || [];
+            const isItem = (item) => item && typeof item === 'object' && item.id !== undefined;
+            if (!Array.isArray(workouts) || !Array.isArray(history) ||
+                !workouts.every(isItem) || !history.every(isItem)) {
+                throw new Error('formato inválido');
+            }
+            this.pendingRestore = { workouts, history };
+            const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+            document.getElementById('restoreSummary').textContent =
+                `Este backup tem ${plural(workouts.length, 'treino', 'treinos')} e ` +
+                `${plural(history.length, 'registro de histórico', 'registros de histórico')}. ` +
+                `Neste aparelho agora há ${plural(this.workouts.length, 'treino', 'treinos')} e ` +
+                `${plural(this.history.length, 'registro de histórico', 'registros de histórico')}.`;
+            document.getElementById('restorePreview').hidden = false;
+        } catch (error) {
+            console.error('Arquivo de backup inválido.', error);
+            this.showToast('Esse arquivo não é um backup válido do App Treino.', 'error');
+        }
+    }
+
+    async applyRestore(mode) {
+        const backup = this.pendingRestore;
+        if (!backup) return;
+
+        if (mode === 'replace') {
+            if (!window.confirm('Isso vai apagar os treinos e o histórico deste aparelho e colocar os do backup no lugar. Continuar?')) return;
+            this.workouts = backup.workouts;
+            this.history = backup.history;
+        } else {
+            const workoutIds = new Set(this.workouts.map(w => w.id));
+            const historyIds = new Set(this.history.map(h => h.id));
+            this.workouts = this.workouts.concat(backup.workouts.filter(w => !workoutIds.has(w.id)));
+            this.history = this.history.concat(backup.history.filter(h => !historyIds.has(h.id)));
+        }
+
+        await this.saveWorkouts();
+        await this.saveHistory();
+        this.pendingRestore = null;
+        this.currentWorkout = null;
+        this.hideModal('backupModal');
+        this.backToWorkoutList();
+        this.renderWorkoutTabs();
+        this.showToast('Backup restaurado!', 'success');
     }
 
     // Abrir a tela de histórico de treinos realizados

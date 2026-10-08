@@ -1934,3 +1934,49 @@ form {
     to { transform: rotate(360deg); }
 }
 
+
+
+/* Backup e Restauração */
+.backup-body {
+    padding: 1.5rem 2rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.backup-section h4 {
+    margin-bottom: 0.4rem;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.backup-section p {
+    color: #555;
+    font-size: 0.92rem;
+    line-height: 1.45;
+    margin-bottom: 0.9rem;
+}
+
+.backup-btn {
+    width: 100%;
+    justify-content: center;
+}
+
+.restore-preview {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 12px;
+    background: #f8f9fa;
+}
+
+.restore-preview[hidden] {
+    display: none;
+}
+
+.restore-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
